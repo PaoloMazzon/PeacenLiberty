@@ -27,6 +27,12 @@ typedef enum { // Various elements in the home map
 	hb_Help = 5,
 } HomeBlocks;
 
+typedef enum {
+	tc_NoDraw = 1, // Don't draw the player
+	tc_Noop = 2, // Nothing, the usual
+	tc_Goto = 3, // Go to a selected planet
+} TerminalCode;
+
 /********************** Constants **********************/
 const int GAME_WIDTH = 600;
 const int GAME_HEIGHT = 400;
@@ -187,6 +193,29 @@ real weightedChance(real percent) { // 70% is 0.7
 	return randr() < percent;
 }
 
+/********************** Drawing/Updating Terminal Menus **********************/
+
+TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
+	return tc_NoDraw;
+}
+
+TerminalCode pnlUpdateMissionSelectTerminal(PNLRuntime game) {
+	return tc_NoDraw;
+}
+
+TerminalCode pnlUpdateHelpTerminal(PNLRuntime game) {
+	return tc_NoDraw;
+}
+
+TerminalCode pnlUpdateStocksTerminal(PNLRuntime game) {
+	return tc_NoDraw;
+}
+
+TerminalCode pnlUpdateWeaponsTerminal(PNLRuntime game) {
+	return tc_NoDraw;
+}
+
+
 /********************** Player and other entities **********************/
 void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 	// Move
@@ -275,48 +304,43 @@ PNLPlanetSpecs pnlCreatePlanetSpec(PNLRuntime game) {
 	return specs;
 }
 
-bool pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the player should be rendered
+TerminalCode pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the player should be rendered
 	PNLHomeBlock *block = &game->home.blocks[index];
-	bool drawPlayer = true;
+	TerminalCode code = tc_Noop;
 
 	if (block->type == hb_Memorial) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
 			vk2dDrawTexture(game->assets.texMemorialTerminal, block->x, block->y);
 		} else {
-			drawPlayer = false;
-			// TODO: Draw menu
+			code = pnlUpdateMemorialTerminal(game);
 		}
 	} else if (block->type == hb_MissionSelect) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
 			vk2dDrawTexture(game->assets.texMissionTerminal, block->x, block->y);
 		} else {
-			drawPlayer = false;
-			// TODO: Draw menu
+			code = pnlUpdateMissionSelectTerminal(game);
 		}
 	} else if (block->type == hb_Help) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
 			vk2dDrawTexture(game->assets.texHelpTerminal, block->x, block->y);
 		} else {
-			drawPlayer = false;
-			// TODO: Draw menu
+			code = pnlUpdateHelpTerminal(game);
 		}
 	} else if (block->type == hb_Stocks) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
 			vk2dDrawTexture(game->assets.texStockTerminal, block->x, block->y);
 		} else {
-			drawPlayer = false;
-			// TODO: Draw menu
+			code = pnlUpdateStocksTerminal(game);
 		}
 	} else if (block->type == hb_Weapons) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
 			vk2dDrawTexture(game->assets.texWeaponTerminal, block->x, block->y);
 		} else {
-			drawPlayer = false;
-			// TODO: Draw menu
+			code = pnlUpdateWeaponsTerminal(game);
 		}
 	}
 
-	return drawPlayer;
+	return code;
 }
 
 /********************** Functions specific to regions **********************/
@@ -329,11 +353,13 @@ WorldSelection pnlUpdateHome(PNLRuntime game) {
 	pnlDrawTiledBackground(game, game->assets.bgHome);
 
 	// Draw/update blocks
-	bool drawPlayer = true;
-	for (int i = 0; i < game->home.size; i++)
-		drawPlayer = pnlUpdateBlock(game, i) && drawPlayer != false ? true : false;
+	TerminalCode code = tc_Noop;
+	for (int i = 0; i < game->home.size; i++) {
+		TerminalCode temp = pnlUpdateBlock(game, i);
+		code = temp != tc_Noop ? temp : code;
+	}
 
-	pnlPlayerUpdate(game, drawPlayer);
+	pnlPlayerUpdate(game, code == tc_Noop);
 
 	// Overlay
 	VK2DCamera cam = vk2dRendererGetCamera();
