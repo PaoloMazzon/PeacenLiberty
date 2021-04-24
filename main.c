@@ -59,6 +59,7 @@ JULoadedAsset ASSETS[] = {
 		{"assets/missionterm.png"},
 		{"assets/stockterm.png"},
 		{"assets/weaponterm.png"},
+		{"assets/cursor.png"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 
@@ -73,7 +74,17 @@ typedef struct PNLPlayer {
 	physvec2 pos;
 	physvec2 velocity;
 	JUSprite sprite;
+	real dosh;
+	real fame;
 } PNLPlayer;
+
+const PNLPlayer PLAYER_DEFAULT_STATE = {
+		{300, 200},
+		{0, 0},
+		NULL,
+		1000,
+		0,
+};
 
 typedef struct PNLEnemy {
 	real x, y;
@@ -106,6 +117,7 @@ typedef struct PNLAssets {
 	VK2DTexture texMissionTerminal;
 	VK2DTexture texStockTerminal;
 	VK2DTexture texWeaponTerminal;
+	VK2DTexture texCursor;
 	JUFont fntOverlay;
 } PNLAssets;
 
@@ -121,7 +133,11 @@ typedef struct PNLRuntime {
 	JULoader loader;
 	PNLAssets assets;
 
-	// Window width and height
+	// Window interface stuff
+	float mouseX, mouseY; // Mouse x/y in the game world - not the window relative
+	bool mouseLPressed, mouseLReleased, mouseLHeld;
+	bool mouseRPressed, mouseRReleased, mouseRHeld;
+	bool mouseMPressed, mouseMReleased, mouseMHeld;
 	int ww, wh;
 } *PNLRuntime;
 
@@ -213,7 +229,7 @@ WorldSelection pnlUpdateHome(PNLRuntime game) {
 	vk2dRendererSetColourMod(VK2D_BLACK);
 	vk2dDrawRectangle(cam.x, cam.y, cam.w, 20);
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
-	juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "FPS: %.1f", 1.0f / juDelta());
+	juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "$%.1f | Fame: %.1f | FPS: %.1f", game->player.dosh, game->player.fame, 1.0f / juDelta());
 	return ws_Home;
 }
 
@@ -236,7 +252,6 @@ void pnlQuitPlanet(PNLRuntime game) {
 /********************** Core game functions **********************/
 void pnlInit(PNLRuntime game) {
 	// Load assets
-	game->player.sprite = juLoaderGetSprite(game->loader, "assets/player.png");
 	game->assets.bgHome = juLoaderGetTexture(game->loader, "assets/home.png");
 	game->assets.fntOverlay = juLoaderGetFont(game->loader, "assets/overlay.jufnt");
 	game->assets.texHelpTerminal = juLoaderGetTexture(game->loader, "assets/helpterm.png");
@@ -244,6 +259,7 @@ void pnlInit(PNLRuntime game) {
 	game->assets.texMissionTerminal = juLoaderGetTexture(game->loader, "assets/missionterm.png");
 	game->assets.texStockTerminal = juLoaderGetTexture(game->loader, "assets/stockterm.png");
 	game->assets.texWeaponTerminal = juLoaderGetTexture(game->loader, "assets/weaponterm.png");
+	game->assets.texCursor = juLoaderGetTexture(game->loader, "assets/cursor.png");
 
 	// Build home grid
 	for (int i = 0; i < HOME_WORLD_GRID_HEIGHT; i++) {
@@ -257,6 +273,10 @@ void pnlInit(PNLRuntime game) {
 			}
 		}
 	}
+
+	// Load default player state
+	memcpy(&game->player, &PLAYER_DEFAULT_STATE, sizeof(struct PNLPlayer));
+	game->player.sprite = juLoaderGetSprite(game->loader, "assets/player.png");
 
 	pnlInitHome(game);
 }
@@ -285,6 +305,7 @@ void pnlUpdate(PNLRuntime game) {
 		pnlQuitHome(game);
 		pnlInitPlanet(game);
 	}
+	vk2dDrawTexture(game->assets.texCursor, game->mouseX - 4, game->mouseY - 4);
 }
 
 void pnlQuit(PNLRuntime game) {
@@ -296,8 +317,8 @@ void pnlQuit(PNLRuntime game) {
 
 /********************** main lmao **********************/
 int main() {
-	// Init
-	SDL_Window *window = SDL_CreateWindow(GAME_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, GAME_WIDTH, GAME_HEIGHT, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+	// Init TODO: Make resizeable
+	SDL_Window *window = SDL_CreateWindow(GAME_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, GAME_WIDTH, GAME_HEIGHT, SDL_WINDOW_VULKAN);
 	VK2DRendererConfig config = {
 			msaa_16x,
 			sm_TripleBuffer,
@@ -311,6 +332,7 @@ int main() {
 	// Backbuffer
 	VK2DTexture backbuffer = vk2dTextureCreate(vk2dRendererGetDevice(), GAME_WIDTH, GAME_HEIGHT);
 	int w, h, lw, lh;
+	int lastState, state;
 	SDL_GetWindowSize(window, &w, &h);
 	lw = w;
 	lh = h;
@@ -330,26 +352,34 @@ int main() {
 				running = false;
 
 		if (running) {
-			// Update viewport and reset backbuffer on window size change
+			// Update window interface stuff for the game
 			lw = w;
 			lh = h;
+			int mx, my;
+			lastState = state;
 			SDL_GetWindowSize(window, &w, &h);
-			if (w != lw || h != lh) {
-				vk2dRendererWait();
-				vk2dTextureFree(backbuffer);
-				backbuffer = vk2dTextureCreate(vk2dRendererGetDevice(), w, h);
-				vk2dRendererSetViewport(0, 0, w, h);
-				game->ww = w;
-				game->wh = h;
-			}
+			state = SDL_GetMouseState(&mx, &my);
+			game->mouseLHeld = state & SDL_BUTTON(SDL_BUTTON_LEFT);
+			game->mouseLPressed = (state & SDL_BUTTON(SDL_BUTTON_LEFT)) && !(lastState & SDL_BUTTON(SDL_BUTTON_LEFT));
+			game->mouseLReleased = !(state & SDL_BUTTON(SDL_BUTTON_LEFT)) && (lastState & SDL_BUTTON(SDL_BUTTON_LEFT));
+			game->mouseRHeld = state & SDL_BUTTON(SDL_BUTTON_RIGHT);
+			game->mouseRPressed = (state & SDL_BUTTON(SDL_BUTTON_RIGHT)) && !(lastState & SDL_BUTTON(SDL_BUTTON_RIGHT));
+			game->mouseRReleased = !(state & SDL_BUTTON(SDL_BUTTON_RIGHT)) && (lastState & SDL_BUTTON(SDL_BUTTON_RIGHT));
+			game->mouseMHeld = state & SDL_BUTTON(SDL_BUTTON_MIDDLE);
+			game->mouseMPressed = (state & SDL_BUTTON(SDL_BUTTON_MIDDLE)) && !(lastState & SDL_BUTTON(SDL_BUTTON_MIDDLE));
+			game->mouseMReleased = !(state & SDL_BUTTON(SDL_BUTTON_MIDDLE)) && (lastState & SDL_BUTTON(SDL_BUTTON_MIDDLE));
+			game->mouseX = mx / (w / GAME_WIDTH);
+			game->mouseY = my / (h / GAME_HEIGHT);
 
 			// Update game
 			pnlPreFrame(game);
 			vk2dRendererStartFrame(VK2D_BLACK);
+			vk2dRendererSetViewport(0, 0, GAME_WIDTH, GAME_HEIGHT);
 			vk2dRendererSetTarget(backbuffer);
 			vk2dRendererClear();
 			pnlUpdate(game);
 			vk2dRendererSetTarget(VK2D_TARGET_SCREEN);
+			vk2dRendererSetViewport(0, 0, w, h);
 			VK2DCamera cam = vk2dRendererGetCamera();
 			vk2dDrawTexture(backbuffer, cam.x, cam.y);
 			vk2dRendererEndFrame();
