@@ -57,6 +57,7 @@ const real DOSH_PLANET_COST_VARIANCE = 50;
 const real DOSH_UPKEEP_COST = 400; // Charged
 const real DOSH_UPKEEP_VARIANCE = 70;
 const real IN_RANGE_TERMINAL_DISTANCE = 30; // Distance away from a terminal considered to be "in-range"
+#define GENERATED_PLANET_COUNT ((int)5) // Number of planets the player can choose from
 
 const HomeBlocks HOME_WORLD_GRID[] = {
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
@@ -81,6 +82,7 @@ JULoadedAsset ASSETS[] = {
 		{"assets/stockterm.png"},
 		{"assets/weaponterm.png"},
 		{"assets/cursor.png"},
+		{"assets/terminalbg.png"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 
@@ -133,6 +135,7 @@ typedef struct PNLPlanet {
 
 typedef struct PNLAssets {
 	VK2DTexture bgHome;
+	VK2DTexture bgTerminal;
 	VK2DTexture texHelpTerminal;
 	VK2DTexture texMemorialTerminal;
 	VK2DTexture texMissionTerminal;
@@ -147,6 +150,8 @@ typedef struct PNLRuntime {
 
 	// Current planet, only matters if out on an expedition
 	PNLPlanet planet;
+	PNLPlanetSpecs potentialPlanets[GENERATED_PLANET_COUNT];
+	int selectedPlanet; // When the player selects a planet to go to it will be here
 	bool onSite; // on a planet or not
 	PNLHome home; // home area
 
@@ -200,6 +205,7 @@ TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
 }
 
 TerminalCode pnlUpdateMissionSelectTerminal(PNLRuntime game) {
+
 	return tc_NoDraw;
 }
 
@@ -345,7 +351,8 @@ TerminalCode pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the
 
 /********************** Functions specific to regions **********************/
 void pnlInitHome(PNLRuntime game) {
-
+	for (int i = 0; i < GENERATED_PLANET_COUNT; i++)
+		game->potentialPlanets[i] = pnlCreatePlanetSpec(game);
 }
 
 WorldSelection pnlUpdateHome(PNLRuntime game) {
@@ -397,6 +404,7 @@ void pnlInit(PNLRuntime game) {
 	game->assets.texStockTerminal = juLoaderGetTexture(game->loader, "assets/stockterm.png");
 	game->assets.texWeaponTerminal = juLoaderGetTexture(game->loader, "assets/weaponterm.png");
 	game->assets.texCursor = juLoaderGetTexture(game->loader, "assets/cursor.png");
+	game->assets.bgTerminal = juLoaderGetTexture(game->loader, "assets/terminalbg.png");
 
 	// Build home grid
 	for (int i = 0; i < HOME_WORLD_GRID_HEIGHT; i++) {
