@@ -35,8 +35,8 @@ const real PHYS_TERMINAL_VELOCITY = 25;
 const real PHYS_FRICTION = 25;
 const real PHYS_ACCELERATION = 18;
 const float PHYS_CAMERA_FRICTION = 8;
-const real WORLD_GRID_WIDTH = 32;
-const real WORLD_GRID_HEIGHT = 32;
+const real WORLD_GRID_WIDTH = 50;
+const real WORLD_GRID_HEIGHT = 90;
 const int DEST_PLANETS = 3; // How many planets to choose from for missions
 const real FAME_PER_PLANET = 30; // Base fame per planet for 1 star difficulty
 const real FAME_VARIANCE = 10;
@@ -50,6 +50,7 @@ const real DOSH_PLANET_COST = 200;
 const real DOSH_PLANET_COST_VARIANCE = 50;
 const real DOSH_UPKEEP_COST = 400; // Charged
 const real DOSH_UPKEEP_VARIANCE = 70;
+const real IN_RANGE_TERMINAL_DISTANCE = 30; // Distance away from a terminal considered to be "in-range"
 
 const HomeBlocks HOME_WORLD_GRID[] = {
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
@@ -187,9 +188,7 @@ real weightedChance(real percent) { // 70% is 0.7
 }
 
 /********************** Player and other entities **********************/
-void pnlPlayerUpdate(PNLRuntime game) {
-	juSpriteDraw(game->player.sprite, game->player.pos.x, game->player.pos.y);
-
+void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 	// Move
 	physvec2 oldVel = game->player.velocity;
 	game->player.velocity.x += (((real)juKeyboardGetKey(SDL_SCANCODE_D)) - ((real)juKeyboardGetKey(SDL_SCANCODE_A))) * PHYS_ACCELERATION * juDelta();
@@ -215,6 +214,10 @@ void pnlPlayerUpdate(PNLRuntime game) {
 
 	// Apply velocity
 	game->player.pos = addPhysVec2(game->player.pos, game->player.velocity);
+
+	// Draw player
+	if (drawPlayer)
+		juSpriteDraw(game->player.sprite, game->player.pos.x, game->player.pos.y);
 }
 
 void pnlDrawTiledBackground(PNLRuntime game, VK2DTexture bg) {
@@ -272,8 +275,48 @@ PNLPlanetSpecs pnlCreatePlanetSpec(PNLRuntime game) {
 	return specs;
 }
 
-void pnlUpdateBlock(PNLRuntime game, int index) {
-	// TODO: This
+bool pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the player should be rendered
+	PNLHomeBlock *block = &game->home.blocks[index];
+	bool drawPlayer = true;
+
+	if (block->type == hb_Memorial) {
+		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
+			vk2dDrawTexture(game->assets.texMemorialTerminal, block->x, block->y);
+		} else {
+			drawPlayer = false;
+			// TODO: Draw menu
+		}
+	} else if (block->type == hb_MissionSelect) {
+		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
+			vk2dDrawTexture(game->assets.texMissionTerminal, block->x, block->y);
+		} else {
+			drawPlayer = false;
+			// TODO: Draw menu
+		}
+	} else if (block->type == hb_Help) {
+		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
+			vk2dDrawTexture(game->assets.texHelpTerminal, block->x, block->y);
+		} else {
+			drawPlayer = false;
+			// TODO: Draw menu
+		}
+	} else if (block->type == hb_Stocks) {
+		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
+			vk2dDrawTexture(game->assets.texStockTerminal, block->x, block->y);
+		} else {
+			drawPlayer = false;
+			// TODO: Draw menu
+		}
+	} else if (block->type == hb_Weapons) {
+		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
+			vk2dDrawTexture(game->assets.texWeaponTerminal, block->x, block->y);
+		} else {
+			drawPlayer = false;
+			// TODO: Draw menu
+		}
+	}
+
+	return drawPlayer;
 }
 
 /********************** Functions specific to regions **********************/
@@ -286,10 +329,11 @@ WorldSelection pnlUpdateHome(PNLRuntime game) {
 	pnlDrawTiledBackground(game, game->assets.bgHome);
 
 	// Draw/update blocks
+	bool drawPlayer = true;
 	for (int i = 0; i < game->home.size; i++)
-		pnlUpdateBlock(game, i);
+		drawPlayer = pnlUpdateBlock(game, i) && drawPlayer != false ? true : false;
 
-	pnlPlayerUpdate(game);
+	pnlPlayerUpdate(game, drawPlayer);
 
 	// Overlay
 	VK2DCamera cam = vk2dRendererGetCamera();
