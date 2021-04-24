@@ -83,6 +83,7 @@ JULoadedAsset ASSETS[] = {
 		{"assets/weaponterm.png"},
 		{"assets/cursor.png"},
 		{"assets/terminalbg.png"},
+		{"assets/yesbutton.png", 0, 0, 50, 50, 0, 3},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 
@@ -142,6 +143,7 @@ typedef struct PNLAssets {
 	VK2DTexture texStockTerminal;
 	VK2DTexture texWeaponTerminal;
 	VK2DTexture texCursor;
+	JUSprite sprButtonYes;
 	JUFont fntOverlay;
 } PNLAssets;
 
@@ -199,6 +201,19 @@ real weightedChance(real percent) { // 70% is 0.7
 }
 
 /********************** Drawing/Updating Terminal Menus **********************/
+
+// Sprite should have 3 frames - normal, mouse over, and pressed
+// Returns true if the button has been pressed
+bool pnlDrawButton(PNLRuntime game, JUSprite button, real x, real y) {
+	JURectangle r = {x, y, button->Internal.w, button->Internal.h};
+	bool mouseOver = juPointInRectangle(&r, game->mouseX, game->mouseY);
+	bool pressed = mouseOver && game->mouseLHeld;
+	juSpriteDrawFrame(button, mouseOver ? (pressed ? 2 : 1) : 0, x, y);
+	if (mouseOver) {
+		printf("ye");
+	}
+	return mouseOver && game->mouseLReleased;
+}
 
 TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
 	return tc_NoDraw;
@@ -319,6 +334,10 @@ TerminalCode pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the
 			vk2dDrawTexture(game->assets.texMemorialTerminal, block->x, block->y);
 		} else {
 			code = pnlUpdateMemorialTerminal(game);
+			VK2DCamera cam = vk2dRendererGetCamera();
+			if (pnlDrawButton(game, game->assets.sprButtonYes, cam.x + 200, cam.y + 200)) {
+				printf("yes\n");
+			}
 		}
 	} else if (block->type == hb_MissionSelect) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
@@ -405,6 +424,7 @@ void pnlInit(PNLRuntime game) {
 	game->assets.texWeaponTerminal = juLoaderGetTexture(game->loader, "assets/weaponterm.png");
 	game->assets.texCursor = juLoaderGetTexture(game->loader, "assets/cursor.png");
 	game->assets.bgTerminal = juLoaderGetTexture(game->loader, "assets/terminalbg.png");
+	game->assets.sprButtonYes = juLoaderGetSprite(game->loader, "assets/yesbutton.png");
 
 	// Build home grid
 	for (int i = 0; i < HOME_WORLD_GRID_HEIGHT; i++) {
