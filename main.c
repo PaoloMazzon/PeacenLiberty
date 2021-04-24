@@ -1,15 +1,16 @@
 #define SDL_MAIN_HANDLED
 #include <JamUtil.h>
 #include <SDL2/SDL.h>
+#include <time.h>
 
 /********************** Typedefs **********************/
 typedef long double real;
 typedef struct {real x; real y;} physvec2;
 typedef enum {
-	pd_Easy,
-	pd_Medium,
-	pd_Hard,
-	pd_SeventhCircle,
+	pd_Easy = 1,
+	pd_Medium = 2,
+	pd_Hard = 3,
+	pd_SeventhCircle = 4,
 } PlanetDifficulty;
 
 typedef enum {
@@ -36,6 +37,19 @@ const real PHYS_ACCELERATION = 18;
 const float PHYS_CAMERA_FRICTION = 8;
 const real WORLD_GRID_WIDTH = 32;
 const real WORLD_GRID_HEIGHT = 32;
+const int DEST_PLANETS = 3; // How many planets to choose from for missions
+const real FAME_PER_PLANET = 30; // Base fame per planet for 1 star difficulty
+const real FAME_VARIANCE = 10;
+const real FAME_MULTIPLIER = 1.6; // Multiplier per difficulty level
+const real FAME_2_STAR_CUTOFF = 20; // Required fame to get these missions
+const real FAME_3_STAR_CUTOFF = 100;
+const real FAME_4_STAR_CUTOFF = 300;
+const real FAME_LOWER_STAR_CHANCE = 0.3; // Chance of mission being a star below current level
+const real DOSH_MULTIPLIER = 2.5; // dosh multiplier per difficulty level
+const real DOSH_PLANET_COST = 200;
+const real DOSH_PLANET_COST_VARIANCE = 50;
+const real DOSH_UPKEEP_COST = 400; // Charged
+const real DOSH_UPKEEP_VARIANCE = 70;
 
 const HomeBlocks HOME_WORLD_GRID[] = {
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
@@ -95,7 +109,7 @@ typedef struct PNLEnemy {
 // Information of a planet the sprite might go to
 typedef struct PNLPlanetSpecs {
 	real fameBonus;
-	real doshBonus;
+	real doshCost;
 	PlanetDifficulty planetDifficulty;
 } PNLPlanetSpecs;
 
@@ -164,6 +178,14 @@ real roundTo(real a, real to) {
 	return floorl(a / to) * to;
 }
 
+real randr() { // Returns a real from 0 - 1
+	return (real)rand() / (real)RAND_MAX;
+}
+
+real weightedChance(real percent) { // 70% is 0.7
+	return randr() < percent;
+}
+
 /********************** Player and other entities **********************/
 void pnlPlayerUpdate(PNLRuntime game) {
 	juSpriteDraw(game->player.sprite, game->player.pos.x, game->player.pos.y);
@@ -213,6 +235,47 @@ void pnlDrawTiledBackground(PNLRuntime game, VK2DTexture bg) {
 	}
 }
 
+// Creates a planet's specs based on player's current fame
+PNLPlanetSpecs pnlCreatePlanetSpec(PNLRuntime game) {
+	PNLPlanetSpecs specs = {};
+	PlanetDifficulty difficulty;
+
+	// Find cutoff
+	if (game->player.fame >= FAME_4_STAR_CUTOFF) {
+		if (weightedChance(FAME_LOWER_STAR_CHANCE))
+			difficulty = pd_Hard;
+		else
+			difficulty = pd_SeventhCircle;
+	} else if (game->player.fame >= FAME_3_STAR_CUTOFF) {
+		if (weightedChance(FAME_LOWER_STAR_CHANCE))
+			difficulty = pd_Medium;
+		else
+			difficulty = pd_Hard;
+	} else if (game->player.fame >= FAME_2_STAR_CUTOFF) {
+		if (weightedChance(FAME_LOWER_STAR_CHANCE))
+			difficulty = pd_Easy;
+		else
+			difficulty = pd_Medium;
+	} else  {
+		difficulty = pd_Easy;
+	}
+
+	// Find multipliers
+	real doshMult = powl(DOSH_MULTIPLIER, (real)difficulty);
+	real fameMult = powl(FAME_MULTIPLIER, (real)difficulty);
+
+	// Contruct planet specs
+	specs.doshCost = (DOSH_PLANET_COST * doshMult) + (DOSH_PLANET_COST_VARIANCE * doshMult * randr());
+	specs.fameBonus = (FAME_PER_PLANET * fameMult) + (FAME_VARIANCE * fameMult * randr());
+	specs.planetDifficulty = difficulty;
+
+	return specs;
+}
+
+void pnlUpdateBlock(PNLRuntime game, int index) {
+	// TODO: This
+}
+
 /********************** Functions specific to regions **********************/
 void pnlInitHome(PNLRuntime game) {
 
@@ -222,6 +285,10 @@ WorldSelection pnlUpdateHome(PNLRuntime game) {
 	// Draw background
 	pnlDrawTiledBackground(game, game->assets.bgHome);
 
+	// Draw/update blocks
+	for (int i = 0; i < game->home.size; i++)
+		pnlUpdateBlock(game, i);
+
 	pnlPlayerUpdate(game);
 
 	// Overlay
@@ -229,7 +296,7 @@ WorldSelection pnlUpdateHome(PNLRuntime game) {
 	vk2dRendererSetColourMod(VK2D_BLACK);
 	vk2dDrawRectangle(cam.x, cam.y, cam.w, 20);
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
-	juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "$%.1f | Fame: %.1f | FPS: %.1f", game->player.dosh, game->player.fame, 1.0f / juDelta());
+	juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Dosh: $%.2f | Fame: %.0f | FPS: %.1f", game->player.dosh, game->player.fame, 1.0f / juDelta());
 	return ws_Home;
 }
 
@@ -238,15 +305,15 @@ void pnlQuitHome(PNLRuntime game) {
 }
 
 void pnlInitPlanet(PNLRuntime game) {
-
+	// TODO: This
 }
 
 WorldSelection pnlUpdatePlanet(PNLRuntime game) {
-	return ws_Offsite;
+	return ws_Offsite; // TODO: This
 }
 
 void pnlQuitPlanet(PNLRuntime game) {
-
+	// TODO: This
 }
 
 /********************** Core game functions **********************/
@@ -328,6 +395,8 @@ int main() {
 	juInit(window);
 	bool running = true;
 	SDL_Event e;
+	srand(time(NULL));
+	SDL_ShowCursor(0);
 
 	// Backbuffer
 	VK2DTexture backbuffer = vk2dTextureCreate(vk2dRendererGetDevice(), GAME_WIDTH, GAME_HEIGHT);
@@ -368,11 +437,12 @@ int main() {
 			game->mouseMHeld = state & SDL_BUTTON(SDL_BUTTON_MIDDLE);
 			game->mouseMPressed = (state & SDL_BUTTON(SDL_BUTTON_MIDDLE)) && !(lastState & SDL_BUTTON(SDL_BUTTON_MIDDLE));
 			game->mouseMReleased = !(state & SDL_BUTTON(SDL_BUTTON_MIDDLE)) && (lastState & SDL_BUTTON(SDL_BUTTON_MIDDLE));
-			game->mouseX = mx / (w / GAME_WIDTH);
-			game->mouseY = my / (h / GAME_HEIGHT);
 
 			// Update game
 			pnlPreFrame(game);
+			VK2DCamera cam = vk2dRendererGetCamera();
+			game->mouseX = (mx / (w / GAME_WIDTH)) + cam.x;
+			game->mouseY = (my / (h / GAME_HEIGHT)) + cam.y;
 			vk2dRendererStartFrame(VK2D_BLACK);
 			vk2dRendererSetViewport(0, 0, GAME_WIDTH, GAME_HEIGHT);
 			vk2dRendererSetTarget(backbuffer);
@@ -380,7 +450,7 @@ int main() {
 			pnlUpdate(game);
 			vk2dRendererSetTarget(VK2D_TARGET_SCREEN);
 			vk2dRendererSetViewport(0, 0, w, h);
-			VK2DCamera cam = vk2dRendererGetCamera();
+			cam = vk2dRendererGetCamera();
 			vk2dDrawTexture(backbuffer, cam.x, cam.y);
 			vk2dRendererEndFrame();
 		}
