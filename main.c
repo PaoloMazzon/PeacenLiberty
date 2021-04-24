@@ -11,10 +11,20 @@ typedef enum {
 	pd_Hard,
 	pd_SeventhCircle,
 } PlanetDifficulty;
+
 typedef enum {
 	ws_Home = 0,
 	ws_Offsite = 1,
 } WorldSelection;
+
+typedef enum { // Various elements in the home map
+	hb_None = 0,
+	hb_MissionSelect = 1,
+	hb_Stocks = 2,
+	hb_Memorial = 3,
+	hb_Weapons = 4,
+	hb_Help = 5,
+} HomeBlocks;
 
 /********************** Constants **********************/
 const int GAME_WIDTH = 600;
@@ -24,15 +34,40 @@ const real PHYS_TERMINAL_VELOCITY = 25;
 const real PHYS_FRICTION = 25;
 const real PHYS_ACCELERATION = 18;
 const float PHYS_CAMERA_FRICTION = 8;
+const real WORLD_GRID_WIDTH = 32;
+const real WORLD_GRID_HEIGHT = 32;
+
+const HomeBlocks HOME_WORLD_GRID[] = {
+		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
+		hb_None, hb_MissionSelect, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
+		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
+		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
+		hb_Stocks, hb_None, hb_None, hb_None, hb_Memorial, hb_None, hb_None, hb_None,
+		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
+		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
+		hb_None, hb_None, hb_Help, hb_None, hb_None, hb_None, hb_Weapons, hb_None,
+};
+#define HOME_WORLD_GRID_WIDTH ((int)8)
+#define HOME_WORLD_GRID_HEIGHT ((int)8)
 
 JULoadedAsset ASSETS[] = {
 		{"assets/player.png", 0, 0, 16, 24},
 		{"assets/home.png"},
 		{"assets/overlay.jufnt"},
+		{"assets/helpterm.png"},
+		{"assets/memorialterm.png"},
+		{"assets/missionterm.png"},
+		{"assets/stockterm.png"},
+		{"assets/weaponterm.png"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 
 /********************** Struct **********************/
+
+typedef struct PNLHomeBlock { // Things in the home world for the player to interact with
+	HomeBlocks type;
+	real x, y;
+} PNLHomeBlock;
 
 typedef struct PNLPlayer {
 	physvec2 pos;
@@ -53,6 +88,12 @@ typedef struct PNLPlanetSpecs {
 	PlanetDifficulty planetDifficulty;
 } PNLPlanetSpecs;
 
+typedef struct PNLHome {
+	// just maximum size because w/e
+	PNLHomeBlock blocks[HOME_WORLD_GRID_WIDTH * HOME_WORLD_GRID_HEIGHT];
+	int size;
+} PNLHome;
+
 // Information of the planet the sprite is on
 typedef struct PNLPlanet {
 
@@ -60,15 +101,21 @@ typedef struct PNLPlanet {
 
 typedef struct PNLAssets {
 	VK2DTexture bgHome;
+	VK2DTexture texHelpTerminal;
+	VK2DTexture texMemorialTerminal;
+	VK2DTexture texMissionTerminal;
+	VK2DTexture texStockTerminal;
+	VK2DTexture texWeaponTerminal;
 	JUFont fntOverlay;
 } PNLAssets;
 
 typedef struct PNLRuntime {
 	PNLPlayer player;
 
-	// Current planet, only matters if out on an expidition
+	// Current planet, only matters if out on an expedition
 	PNLPlanet planet;
 	bool onSite; // on a planet or not
+	PNLHome home; // home area
 
 	// All assets
 	JULoader loader;
@@ -132,6 +179,24 @@ void pnlPlayerUpdate(PNLRuntime game) {
 	game->player.pos = addPhysVec2(game->player.pos, game->player.velocity);
 }
 
+void pnlDrawTiledBackground(PNLRuntime game, VK2DTexture bg) {
+	// Draw background
+	VK2DCamera cam = vk2dRendererGetCamera();
+	int tx = (cam.w / bg->img->width) + 3;
+	int ty = (cam.h / bg->img->height) + 3;
+	float ssx = roundTo(cam.x, bg->img->width) - bg->img->width;
+	float sx = ssx;
+	float sy = roundTo(cam.y, bg->img->height) - bg->img->height;
+	for (int i = 0; i < ty; i++) {
+		for (int j = 0; j < tx; j++) {
+			vk2dDrawTexture(bg, sx, sy);
+			sx += bg->img->width;
+		}
+		sy += bg->img->height;
+		sx = ssx;
+	}
+}
+
 /********************** Functions specific to regions **********************/
 void pnlInitHome(PNLRuntime game) {
 
@@ -139,24 +204,12 @@ void pnlInitHome(PNLRuntime game) {
 
 WorldSelection pnlUpdateHome(PNLRuntime game) {
 	// Draw background
-	VK2DCamera cam = vk2dRendererGetCamera();
-	int tx = (cam.w / game->assets.bgHome->img->width) + 3;
-	int ty = (cam.h / game->assets.bgHome->img->height) + 3;
-	float ssx = roundTo(cam.x, game->assets.bgHome->img->width) - game->assets.bgHome->img->width;
-	float sx = ssx;
-	float sy = roundTo(cam.y, game->assets.bgHome->img->height) - game->assets.bgHome->img->height;
-	for (int i = 0; i < ty; i++) {
-		for (int j = 0; j < tx; j++) {
-			vk2dDrawTexture(game->assets.bgHome, sx, sy);
-			sx += game->assets.bgHome->img->width;
-		}
-		sy += game->assets.bgHome->img->height;
-		sx = ssx;
-	}
+	pnlDrawTiledBackground(game, game->assets.bgHome);
 
 	pnlPlayerUpdate(game);
 
 	// Overlay
+	VK2DCamera cam = vk2dRendererGetCamera();
 	vk2dRendererSetColourMod(VK2D_BLACK);
 	vk2dDrawRectangle(cam.x, cam.y, cam.w, 20);
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
@@ -182,9 +235,29 @@ void pnlQuitPlanet(PNLRuntime game) {
 
 /********************** Core game functions **********************/
 void pnlInit(PNLRuntime game) {
+	// Load assets
 	game->player.sprite = juLoaderGetSprite(game->loader, "assets/player.png");
 	game->assets.bgHome = juLoaderGetTexture(game->loader, "assets/home.png");
 	game->assets.fntOverlay = juLoaderGetFont(game->loader, "assets/overlay.jufnt");
+	game->assets.texHelpTerminal = juLoaderGetTexture(game->loader, "assets/helpterm.png");
+	game->assets.texMemorialTerminal = juLoaderGetTexture(game->loader, "assets/memorialterm.png");
+	game->assets.texMissionTerminal = juLoaderGetTexture(game->loader, "assets/missionterm.png");
+	game->assets.texStockTerminal = juLoaderGetTexture(game->loader, "assets/stockterm.png");
+	game->assets.texWeaponTerminal = juLoaderGetTexture(game->loader, "assets/weaponterm.png");
+
+	// Build home grid
+	for (int i = 0; i < HOME_WORLD_GRID_HEIGHT; i++) {
+		for (int j = 0; j < HOME_WORLD_GRID_WIDTH; j++) {
+			HomeBlocks slot = HOME_WORLD_GRID[(i * HOME_WORLD_GRID_WIDTH) + j];
+			if (slot != hb_None) {
+				game->home.blocks[game->home.size].x = j * WORLD_GRID_WIDTH;
+				game->home.blocks[game->home.size].y = i * WORLD_GRID_HEIGHT;
+				game->home.blocks[game->home.size].type = slot;
+				game->home.size++;
+			}
+		}
+	}
+
 	pnlInitHome(game);
 }
 
