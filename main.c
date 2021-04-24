@@ -20,13 +20,15 @@ typedef enum {
 const int GAME_WIDTH = 600;
 const int GAME_HEIGHT = 400;
 const char *GAME_TITLE = "Peace & Liberty";
-const real PHYS_TERMINAL_VELOCITY = 50;
+const real PHYS_TERMINAL_VELOCITY = 25;
 const real PHYS_FRICTION = 25;
 const real PHYS_ACCELERATION = 18;
+const float PHYS_CAMERA_FRICTION = 8;
 
 JULoadedAsset ASSETS[] = {
 		{"assets/player.png", 0, 0, 16, 24},
 		{"assets/home.png"},
+		{"assets/overlay.jufnt"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 
@@ -58,6 +60,7 @@ typedef struct PNLPlanet {
 
 typedef struct PNLAssets {
 	VK2DTexture bgHome;
+	JUFont fntOverlay;
 } PNLAssets;
 
 typedef struct PNLRuntime {
@@ -107,22 +110,23 @@ void pnlPlayerUpdate(PNLRuntime game) {
 	game->player.velocity.x += (((real)juKeyboardGetKey(SDL_SCANCODE_D)) - ((real)juKeyboardGetKey(SDL_SCANCODE_A))) * PHYS_ACCELERATION * juDelta();
 	game->player.velocity.y += (((real)juKeyboardGetKey(SDL_SCANCODE_S)) - ((real)juKeyboardGetKey(SDL_SCANCODE_W))) * PHYS_ACCELERATION * juDelta();
 	physvec2 diff = subPhysVec2(oldVel, game->player.velocity);
-	bool moved = diff.x != 0 || diff.y != 0;
+	bool movedX = diff.x != 0;
+	bool movedY = diff.y != 0;
 
 	// Apply friction
 	real rfric = PHYS_FRICTION * juDelta();
-	if (absr(game->player.velocity.x) - rfric < 0 && !moved) // x
+	if (absr(game->player.velocity.x) - rfric < 0 && !movedX) // x
 		game->player.velocity.x = 0;
-	else if (!moved)
+	else if (!movedX)
 		game->player.velocity.x += -sign(game->player.velocity.x) * rfric;
-	if (absr(game->player.velocity.y) - rfric < 0 && !moved) // y
+	if (absr(game->player.velocity.y) - rfric < 0 && !movedY) // y
 		game->player.velocity.y = 0;
-	else if (!moved)
+	else if (!movedY)
 		game->player.velocity.y += -sign(game->player.velocity.y) * rfric;
 
 	// Cap velocity
-	if (absr(game->player.velocity.x) > PHYS_TERMINAL_VELOCITY) game->player.velocity.x = PHYS_TERMINAL_VELOCITY;
-	if (absr(game->player.velocity.y) > PHYS_TERMINAL_VELOCITY) game->player.velocity.y = PHYS_TERMINAL_VELOCITY;
+	if (absr(game->player.velocity.x) > PHYS_TERMINAL_VELOCITY) game->player.velocity.x = sign(game->player.velocity.x) * PHYS_TERMINAL_VELOCITY;
+	if (absr(game->player.velocity.y) > PHYS_TERMINAL_VELOCITY) game->player.velocity.y = sign(game->player.velocity.y) * PHYS_TERMINAL_VELOCITY;
 
 	// Apply velocity
 	game->player.pos = addPhysVec2(game->player.pos, game->player.velocity);
@@ -135,9 +139,9 @@ void pnlInitHome(PNLRuntime game) {
 
 WorldSelection pnlUpdateHome(PNLRuntime game) {
 	// Draw background
-	int tx = (GAME_WIDTH / game->assets.bgHome->img->width) + 2;
-	int ty = (GAME_HEIGHT / game->assets.bgHome->img->height) + 2;
 	VK2DCamera cam = vk2dRendererGetCamera();
+	int tx = (cam.w / game->assets.bgHome->img->width) + 3;
+	int ty = (cam.h / game->assets.bgHome->img->height) + 3;
 	float ssx = roundTo(cam.x, game->assets.bgHome->img->width) - game->assets.bgHome->img->width;
 	float sx = ssx;
 	float sy = roundTo(cam.y, game->assets.bgHome->img->height) - game->assets.bgHome->img->height;
@@ -151,6 +155,12 @@ WorldSelection pnlUpdateHome(PNLRuntime game) {
 	}
 
 	pnlPlayerUpdate(game);
+
+	// Overlay
+	vk2dRendererSetColourMod(VK2D_BLACK);
+	vk2dDrawRectangle(cam.x, cam.y, cam.w, 20);
+	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+	juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "FPS: %.1f", 1.0f / juDelta());
 	return ws_Home;
 }
 
@@ -174,17 +184,20 @@ void pnlQuitPlanet(PNLRuntime game) {
 void pnlInit(PNLRuntime game) {
 	game->player.sprite = juLoaderGetSprite(game->loader, "assets/player.png");
 	game->assets.bgHome = juLoaderGetTexture(game->loader, "assets/home.png");
+	game->assets.fntOverlay = juLoaderGetFont(game->loader, "assets/overlay.jufnt");
 	pnlInitHome(game);
 }
 
 // Called before the rendering begins
 void pnlPreFrame(PNLRuntime game) {
-	VK2DCamera cam = {};
-	cam.x = game->player.pos.x - (GAME_WIDTH / 2);
-	cam.y = game->player.pos.y - (GAME_HEIGHT / 2);
+	VK2DCamera cam = vk2dRendererGetCamera();
+	float destX = game->player.pos.x - (game->ww / 2);
+	float destY = game->player.pos.y - (game->wh / 2);
+	cam.x += (destX - cam.x) * PHYS_CAMERA_FRICTION * juDelta();
+	cam.y += (destY - cam.y) * PHYS_CAMERA_FRICTION * juDelta();
 	cam.w = game->ww;
 	cam.h = game->wh;
-	cam.zoom = game->wh / GAME_HEIGHT;
+	cam.zoom = 1;//game->wh / GAME_HEIGHT;
 	vk2dRendererSetCamera(cam);
 }
 
