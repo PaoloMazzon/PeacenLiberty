@@ -21,11 +21,12 @@ const int GAME_WIDTH = 600;
 const int GAME_HEIGHT = 400;
 const char *GAME_TITLE = "Peace & Liberty";
 const real PHYS_TERMINAL_VELOCITY = 50;
-const real PHYS_FRICTION = 0.5;
-const real PHYS_ACCELERATION = 1;
+const real PHYS_FRICTION = 25;
+const real PHYS_ACCELERATION = 18;
 
 JULoadedAsset ASSETS[] = {
-		{"assets/player.png", 0, 0, 16, 24}
+		{"assets/player.png", 0, 0, 16, 24},
+		{"assets/home.png"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 
@@ -55,6 +56,10 @@ typedef struct PNLPlanet {
 
 } PNLPlanet;
 
+typedef struct PNLAssets {
+	VK2DTexture bgHome;
+} PNLAssets;
+
 typedef struct PNLRuntime {
 	PNLPlayer player;
 
@@ -64,6 +69,10 @@ typedef struct PNLRuntime {
 
 	// All assets
 	JULoader loader;
+	PNLAssets assets;
+
+	// Window width and height
+	int ww, wh;
 } *PNLRuntime;
 
 /********************** Utility **********************/
@@ -72,11 +81,50 @@ physvec2 addPhysVec2(physvec2 v1, physvec2 v2) {
 	return v;
 }
 
+physvec2 subPhysVec2(physvec2 v1, physvec2 v2) {
+	physvec2 v = {v1.x - v2.x, v1.y - v2.y};
+	return v;
+}
+
+real sign(real a) {
+	return a > 0 ? 1 : (a < 0 ? -1 : 0);
+}
+
+real absr(real a) {
+	return a < 0 ? -a : a;
+}
+
+real roundTo(real a, real to) {
+	return floorl(a / to) * to;
+}
+
 /********************** Player and other entities **********************/
 void pnlPlayerUpdate(PNLRuntime game) {
 	juSpriteDraw(game->player.sprite, game->player.pos.x, game->player.pos.y);
+
+	// Move
+	physvec2 oldVel = game->player.velocity;
 	game->player.velocity.x += (((real)juKeyboardGetKey(SDL_SCANCODE_D)) - ((real)juKeyboardGetKey(SDL_SCANCODE_A))) * PHYS_ACCELERATION * juDelta();
 	game->player.velocity.y += (((real)juKeyboardGetKey(SDL_SCANCODE_S)) - ((real)juKeyboardGetKey(SDL_SCANCODE_W))) * PHYS_ACCELERATION * juDelta();
+	physvec2 diff = subPhysVec2(oldVel, game->player.velocity);
+	bool moved = diff.x != 0 || diff.y != 0;
+
+	// Apply friction
+	real rfric = PHYS_FRICTION * juDelta();
+	if (absr(game->player.velocity.x) - rfric < 0 && !moved) // x
+		game->player.velocity.x = 0;
+	else if (!moved)
+		game->player.velocity.x += -sign(game->player.velocity.x) * rfric;
+	if (absr(game->player.velocity.y) - rfric < 0 && !moved) // y
+		game->player.velocity.y = 0;
+	else if (!moved)
+		game->player.velocity.y += -sign(game->player.velocity.y) * rfric;
+
+	// Cap velocity
+	if (absr(game->player.velocity.x) > PHYS_TERMINAL_VELOCITY) game->player.velocity.x = PHYS_TERMINAL_VELOCITY;
+	if (absr(game->player.velocity.y) > PHYS_TERMINAL_VELOCITY) game->player.velocity.y = PHYS_TERMINAL_VELOCITY;
+
+	// Apply velocity
 	game->player.pos = addPhysVec2(game->player.pos, game->player.velocity);
 }
 
@@ -86,9 +134,22 @@ void pnlInitHome(PNLRuntime game) {
 }
 
 WorldSelection pnlUpdateHome(PNLRuntime game) {
-	vk2dRendererSetColourMod(VK2D_BLACK);
-	vk2dDrawRectangle(0, 0, 20, 20);
-	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+	// Draw background
+	int tx = (GAME_WIDTH / game->assets.bgHome->img->width) + 2;
+	int ty = (GAME_HEIGHT / game->assets.bgHome->img->height) + 2;
+	VK2DCamera cam = vk2dRendererGetCamera();
+	float ssx = roundTo(cam.x, game->assets.bgHome->img->width) - game->assets.bgHome->img->width;
+	float sx = ssx;
+	float sy = roundTo(cam.y, game->assets.bgHome->img->height) - game->assets.bgHome->img->height;
+	for (int i = 0; i < ty; i++) {
+		for (int j = 0; j < tx; j++) {
+			vk2dDrawTexture(game->assets.bgHome, sx, sy);
+			sx += game->assets.bgHome->img->width;
+		}
+		sy += game->assets.bgHome->img->height;
+		sx = ssx;
+	}
+
 	pnlPlayerUpdate(game);
 	return ws_Home;
 }
@@ -112,7 +173,7 @@ void pnlQuitPlanet(PNLRuntime game) {
 /********************** Core game functions **********************/
 void pnlInit(PNLRuntime game) {
 	game->player.sprite = juLoaderGetSprite(game->loader, "assets/player.png");
-
+	game->assets.bgHome = juLoaderGetTexture(game->loader, "assets/home.png");
 	pnlInitHome(game);
 }
 
@@ -121,9 +182,9 @@ void pnlPreFrame(PNLRuntime game) {
 	VK2DCamera cam = {};
 	cam.x = game->player.pos.x - (GAME_WIDTH / 2);
 	cam.y = game->player.pos.y - (GAME_HEIGHT / 2);
-	cam.w = GAME_WIDTH;
-	cam.h = GAME_HEIGHT;
-	cam.zoom = 1;
+	cam.w = game->ww;
+	cam.h = game->wh;
+	cam.zoom = game->wh / GAME_HEIGHT;
 	vk2dRendererSetCamera(cam);
 }
 
@@ -172,6 +233,8 @@ int main() {
 	// Game
 	PNLRuntime game = calloc(1, sizeof(struct PNLRuntime));
 	game->loader = juLoaderCreate(ASSETS, ASSET_COUNT);
+	game->ww = w;
+	game->wh = h;
 	pnlInit(game);
 
 	while (running) {
@@ -190,6 +253,8 @@ int main() {
 				vk2dTextureFree(backbuffer);
 				backbuffer = vk2dTextureCreate(vk2dRendererGetDevice(), w, h);
 				vk2dRendererSetViewport(0, 0, w, h);
+				game->ww = w;
+				game->wh = h;
 			}
 
 			// Update game
@@ -199,7 +264,8 @@ int main() {
 			vk2dRendererClear();
 			pnlUpdate(game);
 			vk2dRendererSetTarget(VK2D_TARGET_SCREEN);
-			vk2dDrawTexture(backbuffer, 0, 0);
+			VK2DCamera cam = vk2dRendererGetCamera();
+			vk2dDrawTexture(backbuffer, cam.x, cam.y);
 			vk2dRendererEndFrame();
 		}
 	}
