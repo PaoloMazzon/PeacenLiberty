@@ -513,7 +513,7 @@ void pnlDrawWeapon(PNLRuntime game, PNLWeapon wep, float x, float y, float r, fl
 void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 	// Handle weapons
 	float lookingDir = juPointAngle(game->player.pos.x, game->player.pos.y, game->mouseX, game->mouseY);
-
+	// TODO: Shooting
 
 	// Move
 	physvec2 oldVel = game->player.velocity;
@@ -544,7 +544,7 @@ void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 	// Draw player
 	if (drawPlayer) {
 		juSpriteDraw(game->player.sprite, game->player.pos.x, game->player.pos.y);
-		pnlDrawWeapon(game, game->player.weapon, game->player.pos.x, game->player.pos.y - 4, lookingDir, 1, 1);
+		pnlDrawWeapon(game, game->player.weapon, game->player.pos.x, game->player.pos.y - 6, sign(lookingDir) == 1 ? -lookingDir + (VK2D_PI / 2) : -lookingDir + (VK2D_PI / 2) - VK2D_PI, sign(lookingDir), 1);
 	}
 }
 
