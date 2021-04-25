@@ -11,6 +11,7 @@ typedef enum {
 	pd_Medium = 2,
 	pd_Hard = 3,
 	pd_SeventhCircle = 4,
+	pd_MAX = 5,
 } PlanetDifficulty;
 
 typedef enum {
@@ -72,8 +73,27 @@ const HomeBlocks HOME_WORLD_GRID[] = {
 #define HOME_WORLD_GRID_WIDTH ((int)8)
 #define HOME_WORLD_GRID_HEIGHT ((int)8)
 
+const char *PLANET_NAMES[] = {
+		"Alpha Centauri",
+		"Krieg",
+		"Centurion 4",
+		"Fr3dom O-1a",
+		"Earth, Super",
+		"Prosperity *",
+		"S-0 Yland",
+		"Irrumabo",
+		"Merde P-3T1te",
+		"Sram",
+		"J-00Piter",
+		"Jagras",
+};
+const int PLANET_NAMES_COUNT = sizeof(PLANET_NAMES) / sizeof(const char *);
+
 JULoadedAsset ASSETS[] = {
 		{"assets/player.png", 0, 0, 16, 24},
+		{"assets/yesbutton.png", 0, 0, 50, 50, 0, 3},
+		{"assets/stars.png", 0, 0, 29, 29, 0, 4},
+		{"assets/launchbutton.png", 0, 0, 58, 58, 0, 3},
 		{"assets/home.png"},
 		{"assets/overlay.jufnt"},
 		{"assets/helpterm.png"},
@@ -83,9 +103,14 @@ JULoadedAsset ASSETS[] = {
 		{"assets/weaponterm.png"},
 		{"assets/cursor.png"},
 		{"assets/terminalbg.png"},
-		{"assets/yesbutton.png", 0, 0, 50, 50, 0, 3},
+		{"assets/planet1.png"},
+		{"assets/planet2.png"},
+		{"assets/planet3.png"},
+		{"assets/planet4.png"},
+		{"assets/planet5.png"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
+#define PLANET_TEXTURE_COUNT ((int)5)
 
 /********************** Struct **********************/
 
@@ -121,6 +146,8 @@ typedef struct PNLPlanetSpecs {
 	real fameBonus;
 	real doshCost;
 	PlanetDifficulty planetDifficulty;
+	int planetTexIndex;
+	int planetNameIndex;
 } PNLPlanetSpecs;
 
 typedef struct PNLHome {
@@ -131,7 +158,7 @@ typedef struct PNLHome {
 
 // Information of the planet the sprite is on
 typedef struct PNLPlanet {
-
+	PNLPlanetSpecs spec; // Spec this planet comes from
 } PNLPlanet;
 
 typedef struct PNLAssets {
@@ -143,6 +170,9 @@ typedef struct PNLAssets {
 	VK2DTexture texStockTerminal;
 	VK2DTexture texWeaponTerminal;
 	VK2DTexture texCursor;
+	VK2DTexture texPlanets[PLANET_TEXTURE_COUNT];
+	JUSprite sprButtonLaunch;
+	JUSprite sprStars;
 	JUSprite sprButtonYes;
 	JUFont fntOverlay;
 } PNLAssets;
@@ -209,30 +239,80 @@ bool pnlDrawButton(PNLRuntime game, JUSprite button, real x, real y) {
 	bool mouseOver = juPointInRectangle(&r, game->mouseX, game->mouseY);
 	bool pressed = mouseOver && game->mouseLHeld;
 	juSpriteDrawFrame(button, mouseOver ? (pressed ? 2 : 1) : 0, x, y);
-	if (mouseOver) {
-		printf("ye");
-	}
 	return mouseOver && game->mouseLReleased;
 }
 
 TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
+	VK2DCamera cam = vk2dRendererGetCamera();
+	// Coordinates to start drawing the background - the +3 is to account for the background's frame
+	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
+	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
+	vk2dDrawTexture(game->assets.bgTerminal, x - 3, y - 3);
+
 	return tc_NoDraw;
 }
 
 TerminalCode pnlUpdateMissionSelectTerminal(PNLRuntime game) {
+	VK2DCamera cam = vk2dRendererGetCamera();
+	TerminalCode code = tc_NoDraw;
 
-	return tc_NoDraw;
+	// Coordinates to start drawing the background - the +3 is to account for the background's frame
+	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 4;
+	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 4;
+	vk2dDrawTexture(game->assets.bgTerminal, x - 4, y - 4);
+
+	// Draw planets and their info
+	float w = game->assets.texPlanets[0]->img->width;
+	float h = game->assets.texPlanets[0]->img->height;
+	for (int i = 0; i < GENERATED_PLANET_COUNT; i++) {
+		vk2dDrawTexture(game->assets.texPlanets[game->potentialPlanets[i].planetTexIndex], x + 1, y);
+		juFontDraw(game->assets.fntOverlay, x + w + 10, y, PLANET_NAMES[game->potentialPlanets[i].planetNameIndex]);
+		juFontDraw(game->assets.fntOverlay, x + w + 10, y + 29, "Cost: $%.2f | Potential Fame: %.0f", (float)game->potentialPlanets[i].doshCost, (float)roundTo(game->potentialPlanets[i].fameBonus, 10));
+
+		for (int j = 0; j < 4; j++) {
+			if (game->potentialPlanets[i].planetDifficulty <= j)
+				vk2dRendererSetColourMod(VK2D_BLACK);
+			juSpriteDrawFrame(game->assets.sprStars, j, (x + game->assets.bgTerminal->img->width - w - w - 11) + ((j % 2) * 29), y + (j > 1 ? 29 : 0));
+			vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+		}
+
+		if (pnlDrawButton(game, game->assets.sprButtonLaunch, x + game->assets.bgTerminal->img->width - w - 9, y)) {
+			game->selectedPlanet = i;
+			code = tc_Goto;
+		}
+		y += h;
+	}
+
+	return code;
 }
 
 TerminalCode pnlUpdateHelpTerminal(PNLRuntime game) {
+	VK2DCamera cam = vk2dRendererGetCamera();
+	// Coordinates to start drawing the background - the +3 is to account for the background's frame
+	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
+	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
+	vk2dDrawTexture(game->assets.bgTerminal, x - 3, y - 3);
+
 	return tc_NoDraw;
 }
 
 TerminalCode pnlUpdateStocksTerminal(PNLRuntime game) {
+	VK2DCamera cam = vk2dRendererGetCamera();
+	// Coordinates to start drawing the background - the +3 is to account for the background's frame
+	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
+	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
+	vk2dDrawTexture(game->assets.bgTerminal, x - 3, y - 3);
+
 	return tc_NoDraw;
 }
 
 TerminalCode pnlUpdateWeaponsTerminal(PNLRuntime game) {
+	VK2DCamera cam = vk2dRendererGetCamera();
+	// Coordinates to start drawing the background - the +3 is to account for the background's frame
+	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
+	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
+	vk2dDrawTexture(game->assets.bgTerminal, x - 3, y - 3);
+
 	return tc_NoDraw;
 }
 
@@ -321,6 +401,19 @@ PNLPlanetSpecs pnlCreatePlanetSpec(PNLRuntime game) {
 	specs.doshCost = (DOSH_PLANET_COST * doshMult) + (DOSH_PLANET_COST_VARIANCE * doshMult * randr());
 	specs.fameBonus = (FAME_PER_PLANET * fameMult) + (FAME_VARIANCE * fameMult * randr());
 	specs.planetDifficulty = difficulty;
+	specs.planetTexIndex = (int)floorl(randr() * (real)PLANET_TEXTURE_COUNT);
+
+	// Make unique name
+	int chosenName;
+	bool nameTaken = true;
+	while (nameTaken) {
+		chosenName = (int)floorl(randr() * (real)PLANET_NAMES_COUNT);
+		nameTaken = false;
+		for (int i = 0; i < GENERATED_PLANET_COUNT; i++)
+			if (chosenName == game->potentialPlanets[i].planetNameIndex)
+				nameTaken = true;
+	}
+	specs.planetNameIndex = chosenName;
 
 	return specs;
 }
@@ -334,10 +427,6 @@ TerminalCode pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the
 			vk2dDrawTexture(game->assets.texMemorialTerminal, block->x, block->y);
 		} else {
 			code = pnlUpdateMemorialTerminal(game);
-			VK2DCamera cam = vk2dRendererGetCamera();
-			if (pnlDrawButton(game, game->assets.sprButtonYes, cam.x + 200, cam.y + 200)) {
-				printf("yes\n");
-			}
 		}
 	} else if (block->type == hb_MissionSelect) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
@@ -380,9 +469,8 @@ WorldSelection pnlUpdateHome(PNLRuntime game) {
 
 	// Draw/update blocks
 	TerminalCode code = tc_Noop;
-	for (int i = 0; i < game->home.size; i++) {
-		TerminalCode temp = pnlUpdateBlock(game, i);
-		code = temp != tc_Noop ? temp : code;
+	for (int i = 0; i < game->home.size && code == tc_Noop; i++) {
+		code = pnlUpdateBlock(game, i);
 	}
 
 	pnlPlayerUpdate(game, code == tc_Noop);
@@ -392,7 +480,7 @@ WorldSelection pnlUpdateHome(PNLRuntime game) {
 	vk2dRendererSetColourMod(VK2D_BLACK);
 	vk2dDrawRectangle(cam.x, cam.y, cam.w, 20);
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
-	juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Dosh: $%.2f | Fame: %.0f | FPS: %.1f", game->player.dosh, game->player.fame, 1.0f / juDelta());
+juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Dosh: $%.2f | Fame: %.0f | FPS: %.0f", (float)game->player.dosh, (float)game->player.fame, 1.0f / juDelta());
 	return ws_Home;
 }
 
@@ -425,6 +513,13 @@ void pnlInit(PNLRuntime game) {
 	game->assets.texCursor = juLoaderGetTexture(game->loader, "assets/cursor.png");
 	game->assets.bgTerminal = juLoaderGetTexture(game->loader, "assets/terminalbg.png");
 	game->assets.sprButtonYes = juLoaderGetSprite(game->loader, "assets/yesbutton.png");
+	game->assets.texPlanets[0] = juLoaderGetTexture(game->loader, "assets/planet1.png");
+	game->assets.texPlanets[1] = juLoaderGetTexture(game->loader, "assets/planet2.png");
+	game->assets.texPlanets[2] = juLoaderGetTexture(game->loader, "assets/planet3.png");
+	game->assets.texPlanets[3] = juLoaderGetTexture(game->loader, "assets/planet4.png");
+	game->assets.texPlanets[4] = juLoaderGetTexture(game->loader, "assets/planet5.png");
+	game->assets.sprButtonLaunch = juLoaderGetSprite(game->loader, "assets/launchbutton.png");
+	game->assets.sprStars = juLoaderGetSprite(game->loader, "assets/stars.png");
 
 	// Build home grid
 	for (int i = 0; i < HOME_WORLD_GRID_HEIGHT; i++) {
