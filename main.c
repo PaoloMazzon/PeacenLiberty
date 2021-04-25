@@ -50,7 +50,7 @@ const int WINDOW_SCALE = 2;
 const char *GAME_TITLE = "Peace & Liberty";
 const char *SAVE_FILE = "save.bin";
 const char *SAVE_HIGHSCORE = "hs";
-const real PHYS_TERMINAL_VELOCITY = 15; // Physics variables - all in pixels/second
+const real PHYS_TERMINAL_VELOCITY = 8; // Physics variables - all in pixels/second
 const real PHYS_FRICTION = 30; // Only applies while the player is not giving a keyboard input
 const real PHYS_ACCELERATION = 18;
 const float PHYS_CAMERA_FRICTION = 8;
@@ -75,6 +75,7 @@ const real WEAPON_MIN_DAMAGE = 20; // Minimum/maximum possible weapon damage (ro
 const real WEAPON_MAX_DAMAGE = 50;
 const real ENEMY_HP = 100; // Base enemy hp
 const real ENEMY_HP_VARIANCE = 0.3; // Enemy hp can be +/- this percent hp
+const real PLAYER_MAX_HP = 100;
 const real WEAPON_SWORD_DAMAGE_MULTIPLIER = 2; // Swords are risky so huge damage boost
 const real WEAPON_SHOTGUN_DAMAGE_MULTIPLIER = 0.5; // Shotguns have lots of pellets so low damage
 const real WEAPON_ASSAULTRIFLE_DAMAGE_MULTIPLIER = 0.4; // Assault rifles are fast and long-range so low damage
@@ -82,19 +83,19 @@ const real WEAPON_SNIPER_DAMAGE_MULTIPLIER = 3; // Sniper shoots slow but pierce
 const real WEAPON_PISTOL_DAMAGE_MULTIPLIER = 1; // Starting weapon
 const real WEAPON_SWORD_RECOIL = 0; // Velocity applied in the opposite direction when firing a given weapon
 const real WEAPON_SHOTGUN_RECOIL = 10;
-const real WEAPON_ASSAULTRIFLE_RECOIL = 4;
+const real WEAPON_ASSAULTRIFLE_RECOIL = 2;
 const real WEAPON_SNIPER_RECOIL = 15;
 const real WEAPON_PISTOL_RECOIL = 5;
-const int WEAPON_MAX_BPS = 5; // Max/minimum bullets fired per second for assault rifles
-const int WEAPON_MIN_BPS = 2;
+const int WEAPON_MAX_BPS = 10; // Max/minimum bullets fired per second for assault rifles
+const int WEAPON_MIN_BPS = 5;
 const real WEAPON_BASE_COST = 200; // How much a weapon costs base - can be more depending on how good the weapon is
 const real WEAPON_COST_SPREAD_MULTIPLIER = 0.3; // How much more a weapon can cost (percentage) depending on its spread
 const real WEAPON_COST_BPS_MULTIPLIER = 0.3; // How much more a weapon can cost (percentage) depending on its bullets per second
 const real WEAPON_COST_DAMAGE_MULTIPLIER = 0.5; // How much more a weapon can cost (percentage) depending on its damage
 const real WEAPON_SHOTGUN_SPREAD_ANGLE = VK2D_PI / 3; // Angle the pellets can leer off to
 const real WEAPON_DROPOFF = 0.3; // Percent damage lost each pierce
-const real WEAPON_SHOTGUN_DELAY = 1.5; // delay in seconds between shots on this weapon
-const real WEAPON_SNIPER_DELAY = 2.0;
+const real WEAPON_SHOTGUN_DELAY = 0.5; // delay in seconds between shots on this weapon
+const real WEAPON_SNIPER_DELAY = 1;
 const real WEAPON_BULLET_SPEED = 400;
 const real WEAPON_SWORD_BULLET_SPEED = 50;
 const real WEAPON_BULLET_DECELERATION = 4;
@@ -104,7 +105,13 @@ const real FADE_IN_DURATION = 1; // In seconds
 const real MAX_ROT = VK2D_PI * 6; // "Fading in/out" is just rotating/zooming
 const real MAX_ZOOM = 1.5;
 const int MAX_ON_HAND_INVENTORY = 20; // Maximum you can hold of any 1 item
-#define MAX_BULLETS ((int)50) // Maximum number of bullets present at once (because I'm allergic to the hepa)
+const int MIN_ENEMY_SPAWN_DISTANCE = 200; // Nearest and farthest away from the player enemies can spawn
+const int MAX_ENEMY_SPAWN_DISTANCE = 500;
+const int MAX_MINERAL_SPAWN_DISTANCE = 2000; // How far minerals will spawn from the player
+const int MIN_MINERAL_SPAWN_DISTANCE = 50;
+const int MAX_BULLETS = 50; // Maximum number of bullets present at once (because I'm allergic to the hepa)
+const int MAX_MINERALS = 200; // Max minerals in a world
+const int MAX_ENEMIES = 30; // Max enemies in a world at once
 
 const real STOCK_BASE_PRICE = 5; // Base price of all stocks, they will fluctuate from this
 const char *STOCK_NAMES[] = { // Names of the materials you gather
@@ -182,6 +189,7 @@ JULoadedAsset ASSETS[] = {
 		{"assets/sellbutton.png", 0, 0, 58, 29, 0, 3},
 		{"assets/buy10button.png", 0, 0, 58, 29, 0, 3},
 		{"assets/sell10button.png", 0, 0, 58, 29, 0, 3},
+		{"assets/enemy.png", 0, 0, 16, 24, 0.25, 4},
 		{"assets/home.png"},
 		{"assets/overlay.jufnt"},
 		{"assets/helpterm.png"},
@@ -260,9 +268,10 @@ const PNLPlayer PLAYER_DEFAULT_STATE = {
 		{300, 200},
 		{0, 0},
 		NULL,
+		{},
 		800,
 		0,
-		100,
+		PLAYER_MAX_HP,
 };
 
 typedef struct PNLStockMarket {
@@ -298,9 +307,16 @@ typedef struct PNLHome {
 	int size;
 } PNLHome;
 
+typedef struct PNLMineral {
+	physvec2 pos;
+	int stockIndex;
+} PNLMineral;
+
 // Information of the planet the sprite is on
 typedef struct PNLPlanet {
 	PNLPlanetSpecs spec; // Spec this planet comes from
+	PNLMineral minerals[MAX_MINERALS];
+	PNLEnemy enemies[MAX_ENEMIES];
 } PNLPlanet;
 
 typedef struct PNLAssets {
@@ -331,6 +347,7 @@ typedef struct PNLAssets {
 	VK2DTexture texSword;
 	VK2DTexture texBullet;
 	VK2DTexture texWhoosh;
+	JUSprite sprEnemy;
 	JUFont fntOverlay;
 } PNLAssets;
 
@@ -459,7 +476,7 @@ TerminalCode pnlUpdateMissionSelectTerminal(PNLRuntime game) {
 			vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
 		}
 
-		if (pnlDrawButton(game, game->assets.sprButtonLaunch, x + game->assets.bgTerminal->img->width - w - 9, y)) {
+		if (pnlDrawButton(game, game->assets.sprButtonLaunch, x + game->assets.bgTerminal->img->width - w - 9, y) && pnlPlayerPurchase(game, game->potentialPlanets->doshCost)) {
 			pnlLoadPlanet(game, i);
 			game->fadeOut = true;
 			game->fadeClock = 0;
@@ -865,6 +882,17 @@ void pnlUpdateBullets(PNLRuntime game) {
 	}
 }
 
+void pnlDrawTitleBar(PNLRuntime game) {
+	VK2DCamera cam = vk2dRendererGetCamera();
+	vk2dRendererSetColourMod(VK2D_BLACK);
+	vk2dDrawRectangle(cam.x, cam.y, cam.w, 20);
+	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+	if (game->onSite)
+		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "%s | Dosh: $%.2f | Fame: %.0f | FPS: %.1f", PLANET_NAMES[game->planet.spec.planetNameIndex], (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
+	else
+		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Home | Dosh: $%.2f | Fame: %.0f | FPS: %.1f", (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
+}
+
 /********************** Functions specific to regions **********************/
 void pnlInitHome(PNLRuntime game) {
 	for (int i = 0; i < GENERATED_PLANET_COUNT; i++)
@@ -874,6 +902,7 @@ void pnlInitHome(PNLRuntime game) {
 		real mult = weightedChance(0.5) ? -1 : 1; // 50/50 it goes up or down
 		game->market.stockCosts[i] = STOCK_BASE_PRICE * (1 + (mult * (STOCK_FLUCTUATION[i] * randr())));
 	}
+	game->player.hp = PLAYER_MAX_HP;
 }
 
 WorldSelection pnlUpdateHome(PNLRuntime game) {
@@ -890,11 +919,7 @@ WorldSelection pnlUpdateHome(PNLRuntime game) {
 	pnlUpdateBullets(game);
 
 	// Overlay
-	VK2DCamera cam = vk2dRendererGetCamera();
-	vk2dRendererSetColourMod(VK2D_BLACK);
-	vk2dDrawRectangle(cam.x, cam.y, cam.w, 20);
-	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
-	juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Dosh: $%.2f | Fame: %.0f | FPS: %.1f", (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
+	pnlDrawTitleBar(game);
 
 	// Handle fade
 	if (game->fadeOut) {
@@ -925,6 +950,9 @@ WorldSelection pnlUpdatePlanet(PNLRuntime game) {
 
 	pnlPlayerUpdate(game, true);
 	pnlUpdateBullets(game);
+
+	// UI
+	pnlDrawTitleBar(game);
 
 	// DEBUG
 	if (juKeyboardGetKey(SDL_SCANCODE_BACKSPACE)) {
@@ -991,6 +1019,7 @@ void pnlInit(PNLRuntime game) {
 	game->assets.texSword = juLoaderGetTexture(game->loader, "assets/sword.png");
 	game->assets.texBullet = juLoaderGetTexture(game->loader, "assets/bullet.png");
 	game->assets.texWhoosh = juLoaderGetTexture(game->loader, "assets/whoosh.png");
+	game->assets.sprEnemy = juLoaderGetSprite(game->loader, "assets/enemy.png");
 
 	// Build home grid
 	for (int i = 0; i < HOME_WORLD_GRID_HEIGHT; i++) {
