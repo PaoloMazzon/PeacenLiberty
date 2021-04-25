@@ -50,7 +50,7 @@ const int WINDOW_SCALE = 2;
 const char *GAME_TITLE = "Peace & Liberty";
 const char *SAVE_FILE = "save.bin";
 const char *SAVE_HIGHSCORE = "hs";
-const real PHYS_TERMINAL_VELOCITY = 25; // Physics variables - all in pixels/second
+const real PHYS_TERMINAL_VELOCITY = 15; // Physics variables - all in pixels/second
 const real PHYS_FRICTION = 30; // Only applies while the player is not giving a keyboard input
 const real PHYS_ACCELERATION = 18;
 const float PHYS_CAMERA_FRICTION = 8;
@@ -81,23 +81,27 @@ const real WEAPON_ASSAULTRIFLE_DAMAGE_MULTIPLIER = 0.4; // Assault rifles are fa
 const real WEAPON_SNIPER_DAMAGE_MULTIPLIER = 3; // Sniper shoots slow but pierces so high damage
 const real WEAPON_PISTOL_DAMAGE_MULTIPLIER = 1; // Starting weapon
 const real WEAPON_SWORD_RECOIL = 0; // Velocity applied in the opposite direction when firing a given weapon
-const real WEAPON_SHOTGUN_RECOIL = 4;
-const real WEAPON_ASSAULTRIFLE_RECOIL = 1;
-const real WEAPON_SNIPER_RECOIL = 8;
-const real WEAPON_PISTOL_RECOIL = 2;
+const real WEAPON_SHOTGUN_RECOIL = 10;
+const real WEAPON_ASSAULTRIFLE_RECOIL = 4;
+const real WEAPON_SNIPER_RECOIL = 15;
+const real WEAPON_PISTOL_RECOIL = 5;
 const int WEAPON_MAX_BPS = 5; // Max/minimum bullets fired per second for assault rifles
 const int WEAPON_MIN_BPS = 2;
 const real WEAPON_BASE_COST = 200; // How much a weapon costs base - can be more depending on how good the weapon is
 const real WEAPON_COST_SPREAD_MULTIPLIER = 0.3; // How much more a weapon can cost (percentage) depending on its spread
 const real WEAPON_COST_BPS_MULTIPLIER = 0.3; // How much more a weapon can cost (percentage) depending on its bullets per second
 const real WEAPON_COST_DAMAGE_MULTIPLIER = 0.5; // How much more a weapon can cost (percentage) depending on its damage
+const real WEAPON_SHOTGUN_SPREAD_ANGLE = VK2D_PI / 2; // Angle the pellets can leer off to
 const real WEAPON_DROPOFF = 0.3; // Percent damage lost each pierce
 const real WEAPON_SHOTGUN_DELAY = 1.5; // delay in seconds between shots on this weapon
 const real WEAPON_SNIPER_DELAY = 2.0;
+const real WEAPON_BULLET_SPEED = 20;
+const real WEAPON_BULLET_DECELERATION = 4;
 const real FADE_IN_DURATION = 1; // In seconds
 const real MAX_ROT = VK2D_PI * 6; // "Fading in/out" is just rotating/zooming
 const real MAX_ZOOM = 1.5;
 const int MAX_ON_HAND_INVENTORY = 20; // Maximum you can hold of any 1 item
+#define MAX_BULLETS ((int)500) // Maximum number of bullets present at once (because I'm allergic to the hepa)
 
 const real STOCK_BASE_PRICE = 5; // Base price of all stocks, they will fluctuate from this
 const char *STOCK_NAMES[] = { // Names of the materials you gather
@@ -216,12 +220,14 @@ typedef struct PNLHomeBlock { // Things in the home world for the player to inte
 } PNLHomeBlock;
 
 typedef struct PNLBullet {
+	bool active;
 	VK2DTexture tex;
 	physvec2 pos;
 	real direction;
 	real lifetime; // Time in seconds until this bullet despawns
 	real pierce; // how many enemies this has pierced
 	bool canPierce; // only sniper/sword shots "pierce"
+	real damage;
 } PNLBullet;
 
 typedef struct PNLWeapon {
@@ -342,6 +348,10 @@ typedef struct PNLRuntime {
 	// For fading in/out
 	bool fadeIn, fadeOut;
 	real fadeClock; // Counts up to FADE_IN_DURATION
+
+	// Bullets
+	PNLBullet bullets[MAX_BULLETS];
+	int bulletCount;
 
 	// Window interface stuff
 	float mouseX, mouseY; // Mouse x/y in the game world - not the window relative
@@ -527,7 +537,7 @@ TerminalCode pnlUpdateWeaponsTerminal(PNLRuntime game) {
 // Forward declarations
 void pnlDrawWeapon(PNLRuntime game, PNLWeapon wep, float x, float y, float r, float xscale, float yscale);
 PNLWeapon pnlGenerateWeapon(PNLRuntime game, WeaponType weaponType);
-void pnlCreateBullet(PNLRuntime game, physvec2 pos, real direction, bool pierce, VK2DTexture tex);
+void pnlCreateBullet(PNLRuntime game, physvec2 pos, real speed, real direction, bool pierce, real damage, VK2DTexture tex);
 
 // Player update - movement and weapons
 void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
@@ -544,18 +554,48 @@ void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 		game->player.weapon = pnlGenerateWeapon(game, wt_Pistol);
 
 	// Handle weapons
-	float lookingDir = juPointAngle(game->player.pos.x, game->player.pos.y, game->mouseX, game->mouseY);
+	float lookingDir = juPointAngle(game->player.pos.x, game->player.pos.y, game->mouseX, game->mouseY) - (VK2D_PI / 2);
 
 	if (game->player.weapon.weaponType == wt_Shotgun) {
-		
+		if (game->player.weapon.cooldown > 0 ) {
+			game->player.weapon.cooldown -= juDelta();
+		} else if (game->mouseLPressed) {
+			game->player.weapon.cooldown = WEAPON_SHOTGUN_DELAY;
+			// Shotguns are guaranteed to fire 1 pellet where they are aimed
+			pnlCreateBullet(game, game->player.pos, WEAPON_BULLET_SPEED, lookingDir, false, game->player.weapon.weaponDamage, game->assets.texBullet);
+			for (int i = 0; i < (int)game->player.weapon.weaponPellets - 1; i++)
+				pnlCreateBullet(game, game->player.pos, WEAPON_BULLET_SPEED, lookingDir + sign(randr() - 0.5) * 2 * WEAPON_SHOTGUN_SPREAD_ANGLE, false, game->player.weapon.weaponDamage, game->assets.texBullet);
+			game->player.velocity.x -= cos(lookingDir) * WEAPON_SHOTGUN_RECOIL;
+			game->player.velocity.y += sin(lookingDir) * WEAPON_SHOTGUN_RECOIL;
+		}
 	} else if (game->player.weapon.weaponType == wt_Sniper) {
-
+		if (game->player.weapon.cooldown > 0 ) {
+			game->player.weapon.cooldown -= juDelta();
+		} else if (game->mouseLPressed) {
+			game->player.weapon.cooldown = WEAPON_SNIPER_DELAY;
+			pnlCreateBullet(game, game->player.pos, WEAPON_BULLET_SPEED, lookingDir, true, game->player.weapon.weaponDamage, game->assets.texBullet);
+			game->player.velocity.x -= cos(lookingDir) * WEAPON_SNIPER_RECOIL;
+			game->player.velocity.y += sin(lookingDir) * WEAPON_SNIPER_RECOIL;
+		}
 	} else if (game->player.weapon.weaponType == wt_AssaultRifle) {
-
+		if (game->player.weapon.cooldown > 0 ) {
+			game->player.weapon.cooldown -= juDelta();
+		} else if (game->mouseLHeld) {
+			game->player.weapon.cooldown = 1 / game->player.weapon.weaponBPS;
+			pnlCreateBullet(game, game->player.pos, WEAPON_BULLET_SPEED, lookingDir, false, game->player.weapon.weaponDamage, game->assets.texBullet);
+			game->player.velocity.x -= cos(lookingDir) * WEAPON_ASSAULTRIFLE_RECOIL;
+			game->player.velocity.y += sin(lookingDir) * WEAPON_ASSAULTRIFLE_RECOIL;
+		}
 	} else if (game->player.weapon.weaponType == wt_Pistol) {
-
+		if (game->mouseLPressed) {
+			pnlCreateBullet(game, game->player.pos, WEAPON_BULLET_SPEED, lookingDir, false, game->player.weapon.weaponDamage, game->assets.texBullet);
+			game->player.velocity.x -= cos(lookingDir) * WEAPON_PISTOL_RECOIL;
+			game->player.velocity.y += sin(lookingDir) * WEAPON_PISTOL_RECOIL;
+		}
 	} else if (game->player.weapon.weaponType == wt_Sword) {
-
+		pnlCreateBullet(game, game->player.pos, WEAPON_BULLET_SPEED, lookingDir, false, game->player.weapon.weaponDamage, game->assets.texWhoosh);
+		game->player.velocity.x -= cos(lookingDir) * WEAPON_SWORD_RECOIL;
+		game->player.velocity.y += sin(lookingDir) * WEAPON_SWORD_RECOIL;
 	}
 
 	// Move
@@ -586,6 +626,7 @@ void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 
 	// Draw player
 	if (drawPlayer) {
+		lookingDir += VK2D_PI / 2;
 		juSpriteDraw(game->player.sprite, game->player.pos.x, game->player.pos.y);
 		pnlDrawWeapon(game, game->player.weapon, game->player.pos.x, game->player.pos.y - 6, sign(lookingDir) == 1 ? -lookingDir + (VK2D_PI / 2) : -lookingDir + (VK2D_PI / 2) - VK2D_PI, sign(lookingDir), 1);
 	}
@@ -766,7 +807,11 @@ void pnlDrawWeapon(PNLRuntime game, PNLWeapon wep, float x, float y, float r, fl
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
 }
 
-void pnlCreateBullet(PNLRuntime game, physvec2 pos, real direction, bool pierce, VK2DTexture tex) {
+void pnlCreateBullet(PNLRuntime game, physvec2 pos, real speed, real direction, bool pierce, real damage, VK2DTexture tex) {
+	// TODO: This
+}
+
+void pnlUpdateBullets(PNLRuntime game) {
 	// TODO: This
 }
 
