@@ -60,15 +60,32 @@ const real DOSH_UPKEEP_VARIANCE = 70;
 const real IN_RANGE_TERMINAL_DISTANCE = 30; // Distance away from a terminal considered to be "in-range"
 #define GENERATED_PLANET_COUNT ((int)5) // Number of planets the player can choose from
 
+const real STOCK_BASE_PRICE = 5; // Base price of all stocks, they will fluctuate from this
+const char *STOCK_NAMES[] = { // Names of the materials you gather
+		"Ethro",
+		"Lux",
+		"Eojamam",
+		"Petroleum", // freedom juice
+		"Wenrad",
+};
+const real STOCK_FLUCTUATION[] = { // Percent that they can fluctuate on the market (so for example 0.4 means it can be anywhere from base price - 40% to base price + 40%)
+	0.5,
+	0.4,
+	0.45,
+	0.6,
+	0.9,
+};
+#define STOCK_TRADE_COUNT ((int)5) // Number of items that can be traded
+
 const HomeBlocks HOME_WORLD_GRID[] = {
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
-		hb_None, hb_MissionSelect, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
+		hb_None, hb_MissionSelect, hb_None, hb_Stocks, hb_None, hb_Weapons, hb_None, hb_None,
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
-		hb_Stocks, hb_None, hb_None, hb_None, hb_Memorial, hb_None, hb_None, hb_None,
+		hb_None, hb_Help, hb_None, hb_Memorial, hb_None, hb_None, hb_None, hb_None,
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
-		hb_None, hb_None, hb_Help, hb_None, hb_None, hb_None, hb_Weapons, hb_None,
+		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
 };
 #define HOME_WORLD_GRID_WIDTH ((int)8)
 #define HOME_WORLD_GRID_HEIGHT ((int)8)
@@ -108,6 +125,11 @@ JULoadedAsset ASSETS[] = {
 		{"assets/planet3.png"},
 		{"assets/planet4.png"},
 		{"assets/planet5.png"},
+		{"assets/stock1.png"},
+		{"assets/stock2.png"},
+		{"assets/stock3.png"},
+		{"assets/stock4.png"},
+		{"assets/stock5.png"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 #define PLANET_TEXTURE_COUNT ((int)5)
@@ -134,6 +156,11 @@ const PNLPlayer PLAYER_DEFAULT_STATE = {
 		1000,
 		0,
 };
+
+typedef struct PNLStockMarket {
+	real stockCosts[STOCK_TRADE_COUNT]; // What each stock costs
+	int stockOwned[STOCK_TRADE_COUNT]; // What the player owns
+} PNLStockMarket;
 
 typedef struct PNLEnemy {
 	real x, y;
@@ -171,6 +198,7 @@ typedef struct PNLAssets {
 	VK2DTexture texWeaponTerminal;
 	VK2DTexture texCursor;
 	VK2DTexture texPlanets[PLANET_TEXTURE_COUNT];
+	VK2DTexture texStocks[STOCK_TRADE_COUNT];
 	JUSprite sprButtonLaunch;
 	JUSprite sprStars;
 	JUSprite sprButtonYes;
@@ -179,6 +207,7 @@ typedef struct PNLAssets {
 
 typedef struct PNLRuntime {
 	PNLPlayer player;
+	PNLStockMarket market;
 
 	// Current planet, only matters if out on an expedition
 	PNLPlanet planet;
@@ -248,7 +277,7 @@ TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
 	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
 	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
 	vk2dDrawTexture(game->assets.bgTerminal, x - 3, y - 3);
-
+	// TODO: Highscores
 	return tc_NoDraw;
 }
 
@@ -292,7 +321,7 @@ TerminalCode pnlUpdateHelpTerminal(PNLRuntime game) {
 	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
 	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
 	vk2dDrawTexture(game->assets.bgTerminal, x - 3, y - 3);
-
+	juFontDrawWrapped(game->assets.fntOverlay, x + 1, y + 1, game->assets.bgTerminal->img->width - 7, "Peace & Liberty\n\n\nYour goal is to become as famous as possible by spreading \"peace\"\nand \"democracy\" and \"liberty\" by going to alien planets and \ncollecting materials. Once you have those materials, you will come\nback home and sell it on the open market. Beware! You've gotta pay rent and taxes upon your return so you best be careful with your\nspending!");
 	return tc_NoDraw;
 }
 
@@ -302,7 +331,7 @@ TerminalCode pnlUpdateStocksTerminal(PNLRuntime game) {
 	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
 	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
 	vk2dDrawTexture(game->assets.bgTerminal, x - 3, y - 3);
-
+	// TODO: Stock market
 	return tc_NoDraw;
 }
 
@@ -312,7 +341,7 @@ TerminalCode pnlUpdateWeaponsTerminal(PNLRuntime game) {
 	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
 	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
 	vk2dDrawTexture(game->assets.bgTerminal, x - 3, y - 3);
-
+	// TODO: Weapons
 	return tc_NoDraw;
 }
 
@@ -480,8 +509,12 @@ WorldSelection pnlUpdateHome(PNLRuntime game) {
 	vk2dRendererSetColourMod(VK2D_BLACK);
 	vk2dDrawRectangle(cam.x, cam.y, cam.w, 20);
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
-juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Dosh: $%.2f | Fame: %.0f | FPS: %.1f", (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
-	return ws_Home;
+	juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Dosh: $%.2f | Fame: %.0f | FPS: %.1f", (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
+
+	if (code == tc_Goto)
+		return ws_Offsite;
+	else
+		return ws_Home;
 }
 
 void pnlQuitHome(PNLRuntime game) {
@@ -518,6 +551,11 @@ void pnlInit(PNLRuntime game) {
 	game->assets.texPlanets[2] = juLoaderGetTexture(game->loader, "assets/planet3.png");
 	game->assets.texPlanets[3] = juLoaderGetTexture(game->loader, "assets/planet4.png");
 	game->assets.texPlanets[4] = juLoaderGetTexture(game->loader, "assets/planet5.png");
+	game->assets.texStocks[0] = juLoaderGetTexture(game->loader, "assets/stock1.png");
+	game->assets.texStocks[1] = juLoaderGetTexture(game->loader, "assets/stock2.png");
+	game->assets.texStocks[2] = juLoaderGetTexture(game->loader, "assets/stock3.png");
+	game->assets.texStocks[3] = juLoaderGetTexture(game->loader, "assets/stock4.png");
+	game->assets.texStocks[4] = juLoaderGetTexture(game->loader, "assets/stock5.png");
 	game->assets.sprButtonLaunch = juLoaderGetSprite(game->loader, "assets/launchbutton.png");
 	game->assets.sprStars = juLoaderGetSprite(game->loader, "assets/stars.png");
 
