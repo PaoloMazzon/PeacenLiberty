@@ -4,7 +4,7 @@
 #include <time.h>
 
 /********************** Typedefs **********************/
-typedef long double real;
+typedef double real;
 typedef struct {real x; real y;} physvec2;
 typedef enum {
 	pd_Easy = 1,
@@ -38,6 +38,8 @@ typedef enum {
 const int GAME_WIDTH = 600;
 const int GAME_HEIGHT = 400;
 const char *GAME_TITLE = "Peace & Liberty";
+const char *SAVE_FILE = "save.bin";
+const char *SAVE_HIGHSCORE = "hs";
 const real PHYS_TERMINAL_VELOCITY = 25;
 const real PHYS_FRICTION = 25;
 const real PHYS_ACCELERATION = 18;
@@ -111,8 +113,10 @@ JULoadedAsset ASSETS[] = {
 		{"assets/yesbutton.png", 0, 0, 50, 50, 0, 3},
 		{"assets/stars.png", 0, 0, 29, 29, 0, 4},
 		{"assets/launchbutton.png", 0, 0, 58, 58, 0, 3},
-		{"assets/buybutton.png", 0, 0, 58, 58, 0, 3},
-		{"assets/sellbutton.png", 0, 0, 58, 58, 0, 3},
+		{"assets/buybutton.png", 0, 0, 58, 29, 0, 3},
+		{"assets/sellbutton.png", 0, 0, 58, 29, 0, 3},
+		{"assets/buy10button.png", 0, 0, 58, 29, 0, 3},
+		{"assets/sell10button.png", 0, 0, 58, 29, 0, 3},
 		{"assets/home.png"},
 		{"assets/overlay.jufnt"},
 		{"assets/helpterm.png"},
@@ -211,12 +215,15 @@ typedef struct PNLAssets {
 	JUSprite sprButtonYes;
 	JUSprite sprButtonBuy;
 	JUSprite sprButtonSell;
+	JUSprite sprButtonBuy10;
+	JUSprite sprButtonSell10;
 	JUFont fntOverlay;
 } PNLAssets;
 
 typedef struct PNLRuntime {
 	PNLPlayer player;
 	PNLStockMarket market;
+	JUSave save;
 
 	// Current planet, only matters if out on an expedition
 	PNLPlanet planet;
@@ -257,15 +264,25 @@ real absr(real a) {
 }
 
 real roundTo(real a, real to) {
-	return floorl(a / to) * to;
+	return floor(a / to) * to;
 }
 
 real randr() { // Returns a real from 0 - 1
 	return (real)rand() / (real)RAND_MAX;
 }
 
-real weightedChance(real percent) { // 70% is 0.7
+bool weightedChance(real percent) { // 70% is 0.7
 	return randr() < percent;
+}
+
+// Returns true if the player can afford a purchase, removing the money if so
+bool pnlPlayerPurchase(PNLRuntime game, real dosh) {
+	if (game->player.dosh >= dosh) {
+		game->player.dosh -= dosh;
+		return true;
+	} else {
+		return false;
+	}
 }
 
 /********************** Drawing/Updating Terminal Menus **********************/
@@ -286,7 +303,13 @@ TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
 	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
 	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
 	vk2dDrawTexture(game->assets.bgTerminal, x - 3, y - 3);
-	// TODO: Highscores
+
+	if (juSaveKeyExists(game->save, SAVE_HIGHSCORE)) {
+		juFontDraw(game->assets.fntOverlay, x + 1, y - 2, "Highscore: %0.0f fame", juSaveGetDouble(game->save, SAVE_HIGHSCORE));
+	} else {
+		juFontDraw(game->assets.fntOverlay, x + 1, y - 2, "There is no recorded highscore.");
+	}
+
 	return tc_NoDraw;
 }
 
@@ -345,15 +368,34 @@ TerminalCode pnlUpdateStocksTerminal(PNLRuntime game) {
 	float w = game->assets.texStocks[0]->img->width;
 	float h = game->assets.texStocks[0]->img->height;
 	for (int i = 0; i < STOCK_TRADE_COUNT; i++) {
+		float maxCost = (float)STOCK_BASE_PRICE * (1.0f + (float)STOCK_FLUCTUATION[i]);
+		float chanceOfGoingUp = (1 - ((float)game->market.stockCosts[i] / (float)maxCost)) * 100.0f;
 		vk2dDrawTexture(game->assets.texStocks[i], x + 1, y);
 		juFontDraw(game->assets.fntOverlay, x + w + 10, y, "%s | %.0f on hand", STOCK_NAMES[i], (float)game->market.stockOwned[i]);
-		juFontDraw(game->assets.fntOverlay, x + w + 10, y + 29, "Market: $%.2f | Chance of Increasing: %0.0%%", (float)game->market.stockCosts[i], (float)(1 - (game->market.stockCosts[i] / (game->market.stockCosts[i] * (1 + STOCK_FLUCTUATION[i])))) * 100);
+		juFontDraw(game->assets.fntOverlay, x + w + 10, y + 29, "Market: $%.2f | Chance of Increasing: %0.f%%", (float)game->market.stockCosts[i], chanceOfGoingUp);
+		vk2dDrawTexture((game->market.previousCosts[i] < game->market.stockCosts[i] ? game->assets.texUp : game->assets.texDown), x + game->assets.bgTerminal->img->width - w - 9 - 58 - 2 - 30, y);
 
-		if (pnlDrawButton(game, game->assets.sprButtonBuy, x + game->assets.bgTerminal->img->width - w - 9 - 58 - 2, y)) {
-			// TODO: Buy
+		if (pnlDrawButton(game, game->assets.sprButtonBuy, x + game->assets.bgTerminal->img->width - w - 9 - 58 - 2, y + 29)) {
+			if (pnlPlayerPurchase(game, game->market.stockCosts[i])) {
+				game->market.stockOwned[i] += 1;
+			}
 		}
-		if (pnlDrawButton(game, game->assets.sprButtonSell, x + game->assets.bgTerminal->img->width - w - 9, y)) {
-			// TODO: Sell
+		if (pnlDrawButton(game, game->assets.sprButtonSell, x + game->assets.bgTerminal->img->width - w - 9, y + 29)) {
+			if (game->market.stockOwned[i] > 0) {
+				game->market.stockOwned[i] -= 1;
+				game->player.dosh += game->market.stockCosts[i];
+			}
+		}
+		if (pnlDrawButton(game, game->assets.sprButtonBuy10, x + game->assets.bgTerminal->img->width - w - 9 - 58 - 2, y)) {
+			if (pnlPlayerPurchase(game, game->market.stockCosts[i] * 10)) {
+				game->market.stockOwned[i] += 10;
+			}
+		}
+		if (pnlDrawButton(game, game->assets.sprButtonSell10, x + game->assets.bgTerminal->img->width - w - 9, y)) {
+			if (game->market.stockOwned[i] >= 10) {
+				game->market.stockOwned[i] -= 10;
+				game->player.dosh += game->market.stockCosts[i] * 10;
+			}
 		}
 		y += h;
 	}
@@ -449,20 +491,20 @@ PNLPlanetSpecs pnlCreatePlanetSpec(PNLRuntime game) {
 	}
 
 	// Find multipliers
-	real doshMult = powl(DOSH_MULTIPLIER, (real)difficulty);
-	real fameMult = powl(FAME_MULTIPLIER, (real)difficulty);
+	real doshMult = pow(DOSH_MULTIPLIER, (real)difficulty);
+	real fameMult = pow(FAME_MULTIPLIER, (real)difficulty);
 
 	// Contruct planet specs
 	specs.doshCost = (DOSH_PLANET_COST * doshMult) + (DOSH_PLANET_COST_VARIANCE * doshMult * randr());
 	specs.fameBonus = (FAME_PER_PLANET * fameMult) + (FAME_VARIANCE * fameMult * randr());
 	specs.planetDifficulty = difficulty;
-	specs.planetTexIndex = (int)floorl(randr() * (real)PLANET_TEXTURE_COUNT);
+	specs.planetTexIndex = (int)floor(randr() * (real)PLANET_TEXTURE_COUNT);
 
 	// Make unique name
 	int chosenName;
 	bool nameTaken = true;
 	while (nameTaken) {
-		chosenName = (int)floorl(randr() * (real)PLANET_NAMES_COUNT);
+		chosenName = (int)floor(randr() * (real)PLANET_NAMES_COUNT);
 		nameTaken = false;
 		for (int i = 0; i < GENERATED_PLANET_COUNT; i++)
 			if (chosenName == game->potentialPlanets[i].planetNameIndex)
@@ -516,8 +558,11 @@ TerminalCode pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the
 void pnlInitHome(PNLRuntime game) {
 	for (int i = 0; i < GENERATED_PLANET_COUNT; i++)
 		game->potentialPlanets[i] = pnlCreatePlanetSpec(game);
-	// TODO: Generate stocks
-	
+	for (int i = 0; i < STOCK_TRADE_COUNT; i++) {
+		game->market.previousCosts[i] = game->market.stockCosts[i];
+		real mult = weightedChance(0.5) ? -1 : 1; // 50/50 it goes up or down
+		game->market.stockCosts[i] = STOCK_BASE_PRICE * (1 + (mult * (STOCK_FLUCTUATION[i] * randr())));
+	}
 }
 
 WorldSelection pnlUpdateHome(PNLRuntime game) {
@@ -554,7 +599,7 @@ void pnlInitPlanet(PNLRuntime game) {
 }
 
 WorldSelection pnlUpdatePlanet(PNLRuntime game) {
-	return ws_Offsite; // TODO: This
+	return ws_Home; // TODO: This
 }
 
 void pnlQuitPlanet(PNLRuntime game) {
@@ -588,7 +633,9 @@ void pnlInit(PNLRuntime game) {
 	game->assets.texStocks[4] = juLoaderGetTexture(game->loader, "assets/stock5.png");
 	game->assets.sprButtonLaunch = juLoaderGetSprite(game->loader, "assets/launchbutton.png");
 	game->assets.sprButtonBuy = juLoaderGetSprite(game->loader, "assets/buybutton.png");
-	game->assets.sprButtonSell	 = juLoaderGetSprite(game->loader, "assets/sellbutton.png");
+	game->assets.sprButtonSell = juLoaderGetSprite(game->loader, "assets/sellbutton.png");
+	game->assets.sprButtonBuy10 = juLoaderGetSprite(game->loader, "assets/buy10button.png");
+	game->assets.sprButtonSell10 = juLoaderGetSprite(game->loader, "assets/sell10button.png");
 	game->assets.sprStars = juLoaderGetSprite(game->loader, "assets/stars.png");
 
 	// Build home grid
@@ -626,6 +673,20 @@ void pnlPreFrame(PNLRuntime game) {
 
 // Called during rendering
 void pnlUpdate(PNLRuntime game) {
+	if (game->onSite) {
+		if (pnlUpdatePlanet(game) == ws_Home) {
+			game->onSite = false;
+			pnlQuitPlanet(game);
+			pnlInitHome(game);
+		}
+	} else {
+		if (pnlUpdateHome(game) == ws_Offsite) {
+			game->onSite = true;
+			pnlQuitHome(game);
+			pnlInitPlanet(game);
+		}
+	}
+	/*
 	if (game->onSite && pnlUpdatePlanet(game) == ws_Home) {
 		game->onSite = false;
 		pnlQuitPlanet(game);
@@ -634,7 +695,7 @@ void pnlUpdate(PNLRuntime game) {
 		game->onSite = false;
 		pnlQuitHome(game);
 		pnlInitPlanet(game);
-	}
+	}*/
 	vk2dDrawTexture(game->assets.texCursor, game->mouseX - 4, game->mouseY - 4);
 }
 
@@ -672,6 +733,7 @@ int main() {
 
 	// Game
 	PNLRuntime game = calloc(1, sizeof(struct PNLRuntime));
+	game->save = juSaveLoad(SAVE_FILE);
 	game->loader = juLoaderCreate(ASSETS, ASSET_COUNT);
 	game->ww = w;
 	game->wh = h;
@@ -724,6 +786,7 @@ int main() {
 	vk2dRendererWait();
 	pnlQuit(game);
 	juLoaderFree(game->loader);
+	//juSaveFree(game->save); uh oh memory leak
 	free(game);
 	vk2dTextureFree(backbuffer);
 
