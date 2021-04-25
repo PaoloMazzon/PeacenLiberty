@@ -480,7 +480,7 @@ WorldSelection pnlUpdateHome(PNLRuntime game) {
 	vk2dRendererSetColourMod(VK2D_BLACK);
 	vk2dDrawRectangle(cam.x, cam.y, cam.w, 20);
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
-juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Dosh: $%.2f | Fame: %.0f | FPS: %.0f", (float)game->player.dosh, (float)game->player.fame, 1.0f / juDelta());
+juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Dosh: $%.2f | Fame: %.0f | FPS: %.1f", (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
 	return ws_Home;
 }
 
