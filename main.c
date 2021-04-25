@@ -91,6 +91,9 @@ const real WEAPON_BASE_COST = 200; // How much a weapon costs base - can be more
 const real WEAPON_COST_SPREAD_MULTIPLIER = 0.3; // How much more a weapon can cost (percentage) depending on its spread
 const real WEAPON_COST_BPS_MULTIPLIER = 0.3; // How much more a weapon can cost (percentage) depending on its bullets per second
 const real WEAPON_COST_DAMAGE_MULTIPLIER = 0.5; // How much more a weapon can cost (percentage) depending on its damage
+const real WEAPON_DROPOFF = 0.3; // Percent damage lost each pierce
+const real WEAPON_SHOTGUN_DELAY = 1.5; // delay in seconds between shots on this weapon
+const real WEAPON_SNIPER_DELAY = 2.0;
 const real FADE_IN_DURATION = 1; // In seconds
 const real MAX_ROT = VK2D_PI * 6; // "Fading in/out" is just rotating/zooming
 const real MAX_ZOOM = 1.5;
@@ -200,6 +203,7 @@ JULoadedAsset ASSETS[] = {
 		{"assets/sniper.png"},
 		{"assets/sword.png"},
 		{"assets/bullet.png"},
+		{"assets/whoosh.png"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 #define PLANET_TEXTURE_COUNT ((int)5)
@@ -211,6 +215,15 @@ typedef struct PNLHomeBlock { // Things in the home world for the player to inte
 	real x, y;
 } PNLHomeBlock;
 
+typedef struct PNLBullet {
+	VK2DTexture tex;
+	physvec2 pos;
+	real direction;
+	real lifetime; // Time in seconds until this bullet despawns
+	real pierce; // how many enemies this has pierced
+	bool canPierce; // only sniper/sword shots "pierce"
+} PNLBullet;
+
 typedef struct PNLWeapon {
 	real weaponDamage;
 	real weaponPellets; // Number of pellets for a shotgun
@@ -220,6 +233,7 @@ typedef struct PNLWeapon {
 	int weaponNameSecondIndex;
 	vec4 weaponColourMod;
 	WeaponType weaponType;
+	real cooldown; // For weapons with set ROF
 } PNLWeapon;
 
 typedef struct PNLPlayer {
@@ -306,6 +320,7 @@ typedef struct PNLAssets {
 	VK2DTexture texSniper;
 	VK2DTexture texSword;
 	VK2DTexture texBullet;
+	VK2DTexture texWhoosh;
 	JUFont fntOverlay;
 } PNLAssets;
 
@@ -509,11 +524,39 @@ TerminalCode pnlUpdateWeaponsTerminal(PNLRuntime game) {
 
 
 /********************** Player and other entities **********************/
+// Forward declarations
 void pnlDrawWeapon(PNLRuntime game, PNLWeapon wep, float x, float y, float r, float xscale, float yscale);
+PNLWeapon pnlGenerateWeapon(PNLRuntime game, WeaponType weaponType);
+void pnlCreateBullet(PNLRuntime game, physvec2 pos, real direction, bool pierce, VK2DTexture tex);
+
+// Player update - movement and weapons
 void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
+	// DEBUG
+	if (juKeyboardGetKeyPressed(SDL_SCANCODE_1))
+		game->player.weapon = pnlGenerateWeapon(game, wt_Shotgun);
+	else if (juKeyboardGetKeyPressed(SDL_SCANCODE_2))
+		game->player.weapon = pnlGenerateWeapon(game, wt_Sniper);
+	else if (juKeyboardGetKeyPressed(SDL_SCANCODE_3))
+		game->player.weapon = pnlGenerateWeapon(game, wt_Sword);
+	else if (juKeyboardGetKeyPressed(SDL_SCANCODE_4))
+		game->player.weapon = pnlGenerateWeapon(game, wt_AssaultRifle);
+	else if (juKeyboardGetKeyPressed(SDL_SCANCODE_5))
+		game->player.weapon = pnlGenerateWeapon(game, wt_Pistol);
+
 	// Handle weapons
 	float lookingDir = juPointAngle(game->player.pos.x, game->player.pos.y, game->mouseX, game->mouseY);
-	// TODO: Shooting
+
+	if (game->player.weapon.weaponType == wt_Shotgun) {
+		
+	} else if (game->player.weapon.weaponType == wt_Sniper) {
+
+	} else if (game->player.weapon.weaponType == wt_AssaultRifle) {
+
+	} else if (game->player.weapon.weaponType == wt_Pistol) {
+
+	} else if (game->player.weapon.weaponType == wt_Sword) {
+
+	}
 
 	// Move
 	physvec2 oldVel = game->player.velocity;
@@ -663,7 +706,7 @@ TerminalCode pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the
 
 // Generates a random weapon, specify wt_Any for a random weapon or wt_whatever for a specific type of weapon
 PNLWeapon pnlGenerateWeapon(PNLRuntime game, WeaponType weaponType) {
-	PNLWeapon wep;
+	PNLWeapon wep = {};
 
 	// Choose random type
 	if (weaponType == wt_Any) {
@@ -721,6 +764,10 @@ void pnlDrawWeapon(PNLRuntime game, PNLWeapon wep, float x, float y, float r, fl
 	vk2dRendererSetColourMod(wep.weaponColourMod);
 	vk2dRendererDrawTexture(tex, x, y, xscale, yscale, r, 0, tex->img->height / 2, 0, 0, tex->img->width, tex->img->height);
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+}
+
+void pnlCreateBullet(PNLRuntime game, physvec2 pos, real direction, bool pierce, VK2DTexture tex) {
+	// TODO: This
 }
 
 /********************** Functions specific to regions **********************/
@@ -846,6 +893,7 @@ void pnlInit(PNLRuntime game) {
 	game->assets.texSniper = juLoaderGetTexture(game->loader, "assets/sniper.png");
 	game->assets.texSword = juLoaderGetTexture(game->loader, "assets/sword.png");
 	game->assets.texBullet = juLoaderGetTexture(game->loader, "assets/bullet.png");
+	game->assets.texWhoosh = juLoaderGetTexture(game->loader, "assets/whoosh.png");
 
 	// Build home grid
 	for (int i = 0; i < HOME_WORLD_GRID_HEIGHT; i++) {
@@ -957,6 +1005,14 @@ int main() {
 	lw = w;
 	lh = h;
 	vk2dRendererSetTextureCamera(true);
+
+	// Show loading screen before loading assets
+	VK2DTexture texLoading = vk2dTextureLoad("assets/loading.png");
+	vk2dRendererStartFrame(VK2D_BLACK);
+	vk2dDrawTextureExt(texLoading, 0, 0, WINDOW_SCALE, WINDOW_SCALE, 0, 0, 0);
+	vk2dRendererEndFrame();
+	vk2dRendererWait();
+	vk2dTextureFree(texLoading);
 
 	// Game
 	PNLRuntime game = calloc(1, sizeof(struct PNLRuntime));
