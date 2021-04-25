@@ -49,38 +49,46 @@ const int WINDOW_SCALE = 2;
 const char *GAME_TITLE = "Peace & Liberty";
 const char *SAVE_FILE = "save.bin";
 const char *SAVE_HIGHSCORE = "hs";
-const real PHYS_TERMINAL_VELOCITY = 25;
-const real PHYS_FRICTION = 25;
+const real PHYS_TERMINAL_VELOCITY = 25; // Physics variables - all in pixels/second
+const real PHYS_FRICTION = 30; // Only applies while the player is not giving a keyboard input
 const real PHYS_ACCELERATION = 18;
 const float PHYS_CAMERA_FRICTION = 8;
-const real WORLD_GRID_WIDTH = 50;
+const real WORLD_GRID_WIDTH = 50; // These are really only for the homeworld and honestly dont matter that much
 const real WORLD_GRID_HEIGHT = 90;
 const int DEST_PLANETS = 3; // How many planets to choose from for missions
 const real FAME_PER_PLANET = 30; // Base fame per planet for 1 star difficulty
-const real FAME_VARIANCE = 10;
+const real FAME_VARIANCE = 10; // Fame for a planet can fluctuate by +/- up to this amount
 const real FAME_MULTIPLIER = 1.6; // Multiplier per difficulty level
 const real FAME_2_STAR_CUTOFF = 20; // Required fame to get these missions
 const real FAME_3_STAR_CUTOFF = 100;
 const real FAME_4_STAR_CUTOFF = 300;
 const real FAME_LOWER_STAR_CHANCE = 0.3; // Chance of mission being a star below current level
-const real DOSH_MULTIPLIER = 2.5; // dosh multiplier per difficulty level
-const real DOSH_PLANET_COST = 200;
-const real DOSH_PLANET_COST_VARIANCE = 50;
-const real DOSH_UPKEEP_COST = 400; // Charged
-const real DOSH_UPKEEP_VARIANCE = 70;
+const real DOSH_PLANET_COST = 200; // Cost of departing to a planet
+const real DOSH_MULTIPLIER = 2.5; // Cost multiplier per difficulty level
+const real DOSH_PLANET_COST_VARIANCE = 50; // How much the cost can vary (also multiplied by cost multiplier)
 const real IN_RANGE_TERMINAL_DISTANCE = 30; // Distance away from a terminal considered to be "in-range"
 #define GENERATED_PLANET_COUNT ((int)5) // Number of planets the player can choose from
 const int WEAPON_MIN_SPREAD = 1; // Minimum/maximum pellets per shotgun blast
 const int WEAPON_MAX_SPREAD = 8;
-const real WEAPON_MIN_DAMAGE = 20;
+const real WEAPON_MIN_DAMAGE = 20; // Minimum/maximum possible weapon damage (rolled at random)
 const real WEAPON_MAX_DAMAGE = 50;
-const real ENEMY_HP = 100;
+const real ENEMY_HP = 100; // Base enemy hp
 const real ENEMY_HP_VARIANCE = 0.3; // Enemy hp can be +/- this percent hp
-const real WEAPON_SWORD_DAMAGE_MULTIPLIER = 2; // Basically faster weapons get less damage
-const real WEAPON_SHOTGUN_DAMAGE_MULTIPLIER = 0.5;
-const real WEAPON_ASSAULTRIFLE_DAMAGE_MULTIPLIER = 0.4;
-const real WEAPON_SNIPER_DAMAGE_MULTIPLIER = 3;
-const real WEAPON_PISTOL_DAMAGE_MULTIPLIER = 1;
+const real WEAPON_SWORD_DAMAGE_MULTIPLIER = 2; // Swords are risky so huge damage boost
+const real WEAPON_SHOTGUN_DAMAGE_MULTIPLIER = 0.5; // Shotguns have lots of pellets so low damage
+const real WEAPON_ASSAULTRIFLE_DAMAGE_MULTIPLIER = 0.4; // Assault rifles are fast and long-range so low damage
+const real WEAPON_SNIPER_DAMAGE_MULTIPLIER = 3; // Sniper shoots slow but pierces so high damage
+const real WEAPON_PISTOL_DAMAGE_MULTIPLIER = 1; // Starting weapon
+const int WEAPON_MAX_BPS = 5; // Max/minimum bullets fired per second for assault rifles
+const int WEAPON_MIN_BPS = 2;
+const real WEAPON_BASE_COST = 200; // How much a weapon costs base - can be more depending on how good the weapon is
+const real WEAPON_COST_SPREAD_MULTIPLIER = 0.3; // How much more a weapon can cost (percentage) depending on its spread
+const real WEAPON_COST_BPS_MULTIPLIER = 0.3; // How much more a weapon can cost (percentage) depending on its bullets per second
+const real WEAPON_COST_DAMAGE_MULTIPLIER = 0.5; // How much more a weapon can cost (percentage) depending on its damage
+const real FADE_IN_DURATION = 1; // In seconds
+const real MAX_ROT = VK2D_PI * 6; // "Fading in/out" is just rotating/zooming
+const real MAX_ZOOM = 1.5;
+const int MAX_ON_HAND_INVENTORY = 20; // Maximum you can hold of any 1 item
 
 const real STOCK_BASE_PRICE = 5; // Base price of all stocks, they will fluctuate from this
 const char *STOCK_NAMES[] = { // Names of the materials you gather
@@ -179,6 +187,13 @@ JULoadedAsset ASSETS[] = {
 		{"assets/stock5.png"},
 		{"assets/down.png"},
 		{"assets/up.png"},
+		{"assets/assaultrifle.png"},
+		{"assets/onsite.png"},
+		{"assets/pistol"},
+		{"assets/shotgun.png"},
+		{"assets/sniper.png"},
+		{"assets/sword.png"},
+		{"assets/bullet.png"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 #define PLANET_TEXTURE_COUNT ((int)5)
@@ -210,7 +225,7 @@ const PNLPlayer PLAYER_DEFAULT_STATE = {
 		{300, 200},
 		{0, 0},
 		NULL,
-		1000,
+		800,
 		0,
 		100,
 };
@@ -235,6 +250,12 @@ typedef struct PNLPlanetSpecs {
 	int planetTexIndex;
 	int planetNameIndex;
 } PNLPlanetSpecs;
+
+// For taking goods from planets to the ship
+typedef struct PNLInventory {
+	int onHandInventory[STOCK_TRADE_COUNT];
+	int onShipInventory[STOCK_TRADE_COUNT];
+} PNLInventory;
 
 typedef struct PNLHome {
 	// just maximum size because w/e
@@ -267,6 +288,13 @@ typedef struct PNLAssets {
 	JUSprite sprButtonSell;
 	JUSprite sprButtonBuy10;
 	JUSprite sprButtonSell10;
+	VK2DTexture texAssaultRifle;
+	VK2DTexture texOnsite;
+	VK2DTexture texPistol;
+	VK2DTexture texShotgun;
+	VK2DTexture texSniper;
+	VK2DTexture texSword;
+	VK2DTexture texBullet;
 	JUFont fntOverlay;
 } PNLAssets;
 
@@ -278,13 +306,16 @@ typedef struct PNLRuntime {
 	// Current planet, only matters if out on an expedition
 	PNLPlanet planet;
 	PNLPlanetSpecs potentialPlanets[GENERATED_PLANET_COUNT];
-	int selectedPlanet; // When the player selects a planet to go to it will be here
 	bool onSite; // on a planet or not
 	PNLHome home; // home area
 
 	// All assets
 	JULoader loader;
 	PNLAssets assets;
+
+	// For fading in/out
+	bool fadeIn, fadeOut;
+	real fadeClock; // Counts up to FADE_IN_DURATION
 
 	// Window interface stuff
 	float mouseX, mouseY; // Mouse x/y in the game world - not the window relative
@@ -363,6 +394,7 @@ TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
 	return tc_NoDraw;
 }
 
+void pnlLoadPlanet(PNLRuntime game, int index);
 TerminalCode pnlUpdateMissionSelectTerminal(PNLRuntime game) {
 	VK2DCamera cam = vk2dRendererGetCamera();
 	TerminalCode code = tc_NoDraw;
@@ -388,8 +420,9 @@ TerminalCode pnlUpdateMissionSelectTerminal(PNLRuntime game) {
 		}
 
 		if (pnlDrawButton(game, game->assets.sprButtonLaunch, x + game->assets.bgTerminal->img->width - w - 9, y)) {
-			game->selectedPlanet = i;
-			code = tc_Goto;
+			pnlLoadPlanet(game, i);
+			game->fadeOut = true;
+			game->fadeClock = 0;
 		}
 		y += h;
 	}
@@ -515,6 +548,12 @@ void pnlDrawTiledBackground(PNLRuntime game, VK2DTexture bg) {
 	}
 }
 
+// Loads a selected planet spec into the current planet slot
+void pnlLoadPlanet(PNLRuntime game, int index) {
+	memset(&game->planet, 0, sizeof(struct PNLPlanet));
+	game->planet.spec = game->potentialPlanets[index];
+}
+
 // Creates a planet's specs based on player's current fame
 PNLPlanetSpecs pnlCreatePlanetSpec(PNLRuntime game) {
 	PNLPlanetSpecs specs = {};
@@ -572,31 +611,31 @@ TerminalCode pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the
 	if (block->type == hb_Memorial) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
 			vk2dDrawTexture(game->assets.texMemorialTerminal, block->x, block->y);
-		} else {
+		} else if (!game->fadeIn && !game->fadeOut) { // only do terminal things when not fading
 			code = pnlUpdateMemorialTerminal(game);
 		}
 	} else if (block->type == hb_MissionSelect) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
 			vk2dDrawTexture(game->assets.texMissionTerminal, block->x, block->y);
-		} else {
+		} else if (!game->fadeIn && !game->fadeOut) { // only do terminal things when not fading
 			code = pnlUpdateMissionSelectTerminal(game);
 		}
 	} else if (block->type == hb_Help) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
 			vk2dDrawTexture(game->assets.texHelpTerminal, block->x, block->y);
-		} else {
+		} else if (!game->fadeIn && !game->fadeOut) { // only do terminal things when not fading
 			code = pnlUpdateHelpTerminal(game);
 		}
 	} else if (block->type == hb_Stocks) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
 			vk2dDrawTexture(game->assets.texStockTerminal, block->x, block->y);
-		} else {
+		} else if (!game->fadeIn && !game->fadeOut) { // only do terminal things when not fading
 			code = pnlUpdateStocksTerminal(game);
 		}
 	} else if (block->type == hb_Weapons) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
 			vk2dDrawTexture(game->assets.texWeaponTerminal, block->x, block->y);
-		} else {
+		} else if (!game->fadeIn && !game->fadeOut) { // only do terminal things when not fading
 			code = pnlUpdateWeaponsTerminal(game);
 		}
 	}
@@ -634,6 +673,15 @@ WorldSelection pnlUpdateHome(PNLRuntime game) {
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
 	juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Dosh: $%.2f | Fame: %.0f | FPS: %.1f", (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
 
+	// Handle fade
+	if (game->fadeOut) {
+		if (game->fadeClock >= FADE_IN_DURATION) {
+			code = tc_Goto;
+			game->fadeOut = false;
+		}
+		game->fadeClock += juDelta();
+	}
+
 	if (code == tc_Goto)
 		return ws_Offsite;
 	else
@@ -645,11 +693,33 @@ void pnlQuitHome(PNLRuntime game) {
 }
 
 void pnlInitPlanet(PNLRuntime game) {
-	// TODO: This
+	game->fadeIn = true;
+	game->fadeClock = 0;
 }
 
 WorldSelection pnlUpdatePlanet(PNLRuntime game) {
-	return ws_Home; // TODO: This
+	pnlPlayerUpdate(game, true);
+
+	// DEBUG
+	if (juKeyboardGetKey(SDL_SCANCODE_BACKSPACE)) {
+		game->fadeOut = true;
+		game->fadeClock = 0;
+	}
+
+	// Handle fade in/out
+	if (game->fadeIn) {
+		if (game->fadeClock >= FADE_IN_DURATION)
+			game->fadeIn = false;
+		game->fadeClock += juDelta();
+	} else if (game->fadeOut) {
+		if (game->fadeClock >= FADE_IN_DURATION) {
+			game->fadeOut = false;
+			return ws_Home;
+		}
+		game->fadeClock += juDelta();
+	}
+
+	return ws_Offsite;
 }
 
 void pnlQuitPlanet(PNLRuntime game) {
@@ -687,6 +757,13 @@ void pnlInit(PNLRuntime game) {
 	game->assets.sprButtonBuy10 = juLoaderGetSprite(game->loader, "assets/buy10button.png");
 	game->assets.sprButtonSell10 = juLoaderGetSprite(game->loader, "assets/sell10button.png");
 	game->assets.sprStars = juLoaderGetSprite(game->loader, "assets/stars.png");
+	game->assets.texAssaultRifle = juLoaderGetTexture(game->loader, "assets/assaultrifle.png");
+	game->assets.texOnsite = juLoaderGetTexture(game->loader, "assets/onsite.png");
+	game->assets.texPistol = juLoaderGetTexture(game->loader, "assets/pistol");
+	game->assets.texShotgun = juLoaderGetTexture(game->loader, "assets/shotgun.png");
+	game->assets.texSniper = juLoaderGetTexture(game->loader, "assets/sniper.png");
+	game->assets.texSword = juLoaderGetTexture(game->loader, "assets/sword.png");
+	game->assets.texBullet = juLoaderGetTexture(game->loader, "assets/bullet.png");
 
 	// Build home grid
 	for (int i = 0; i < HOME_WORLD_GRID_HEIGHT; i++) {
@@ -717,7 +794,19 @@ void pnlPreFrame(PNLRuntime game) {
 	cam.y += (destY - cam.y) * PHYS_CAMERA_FRICTION * juDelta();
 	cam.w = GAME_WIDTH;
 	cam.h = GAME_HEIGHT;
-	cam.zoom = 1;//game->wh / GAME_HEIGHT;
+	if (!game->fadeIn && !game->fadeOut) {
+		cam.zoom = 1;
+		cam.rot = 0;
+	} else {
+		float percent;
+		if (!game->fadeIn)
+			percent = 1.0f - (game->fadeClock / FADE_IN_DURATION);
+		else
+			percent = (float)(game->fadeClock / FADE_IN_DURATION);
+		cam.zoom = MAX_ZOOM * percent;
+		cam.rot = MAX_ROT * percent;
+	}
+
 	vk2dRendererSetCamera(cam);
 }
 
