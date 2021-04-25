@@ -111,6 +111,8 @@ JULoadedAsset ASSETS[] = {
 		{"assets/yesbutton.png", 0, 0, 50, 50, 0, 3},
 		{"assets/stars.png", 0, 0, 29, 29, 0, 4},
 		{"assets/launchbutton.png", 0, 0, 58, 58, 0, 3},
+		{"assets/buybutton.png", 0, 0, 58, 58, 0, 3},
+		{"assets/sellbutton.png", 0, 0, 58, 58, 0, 3},
 		{"assets/home.png"},
 		{"assets/overlay.jufnt"},
 		{"assets/helpterm.png"},
@@ -130,6 +132,8 @@ JULoadedAsset ASSETS[] = {
 		{"assets/stock3.png"},
 		{"assets/stock4.png"},
 		{"assets/stock5.png"},
+		{"assets/down.png"},
+		{"assets/up.png"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 #define PLANET_TEXTURE_COUNT ((int)5)
@@ -159,6 +163,7 @@ const PNLPlayer PLAYER_DEFAULT_STATE = {
 
 typedef struct PNLStockMarket {
 	real stockCosts[STOCK_TRADE_COUNT]; // What each stock costs
+	real previousCosts[STOCK_TRADE_COUNT]; // What they were yesterday
 	int stockOwned[STOCK_TRADE_COUNT]; // What the player owns
 } PNLStockMarket;
 
@@ -197,11 +202,15 @@ typedef struct PNLAssets {
 	VK2DTexture texStockTerminal;
 	VK2DTexture texWeaponTerminal;
 	VK2DTexture texCursor;
+	VK2DTexture texDown;
+	VK2DTexture texUp;
 	VK2DTexture texPlanets[PLANET_TEXTURE_COUNT];
 	VK2DTexture texStocks[STOCK_TRADE_COUNT];
 	JUSprite sprButtonLaunch;
 	JUSprite sprStars;
 	JUSprite sprButtonYes;
+	JUSprite sprButtonBuy;
+	JUSprite sprButtonSell;
 	JUFont fntOverlay;
 } PNLAssets;
 
@@ -331,7 +340,24 @@ TerminalCode pnlUpdateStocksTerminal(PNLRuntime game) {
 	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
 	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
 	vk2dDrawTexture(game->assets.bgTerminal, x - 3, y - 3);
-	// TODO: Stock market
+
+	// Draw stocks and their info
+	float w = game->assets.texStocks[0]->img->width;
+	float h = game->assets.texStocks[0]->img->height;
+	for (int i = 0; i < STOCK_TRADE_COUNT; i++) {
+		vk2dDrawTexture(game->assets.texStocks[i], x + 1, y);
+		juFontDraw(game->assets.fntOverlay, x + w + 10, y, "%s | %.0f on hand", STOCK_NAMES[i], (float)game->market.stockOwned[i]);
+		juFontDraw(game->assets.fntOverlay, x + w + 10, y + 29, "Market: $%.2f | Chance of Increasing: %0.0%%", (float)game->market.stockCosts[i], (float)(1 - (game->market.stockCosts[i] / (game->market.stockCosts[i] * (1 + STOCK_FLUCTUATION[i])))) * 100);
+
+		if (pnlDrawButton(game, game->assets.sprButtonBuy, x + game->assets.bgTerminal->img->width - w - 9 - 58 - 2, y)) {
+			// TODO: Buy
+		}
+		if (pnlDrawButton(game, game->assets.sprButtonSell, x + game->assets.bgTerminal->img->width - w - 9, y)) {
+			// TODO: Sell
+		}
+		y += h;
+	}
+
 	return tc_NoDraw;
 }
 
@@ -490,6 +516,8 @@ TerminalCode pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the
 void pnlInitHome(PNLRuntime game) {
 	for (int i = 0; i < GENERATED_PLANET_COUNT; i++)
 		game->potentialPlanets[i] = pnlCreatePlanetSpec(game);
+	// TODO: Generate stocks
+	
 }
 
 WorldSelection pnlUpdateHome(PNLRuntime game) {
@@ -544,6 +572,8 @@ void pnlInit(PNLRuntime game) {
 	game->assets.texStockTerminal = juLoaderGetTexture(game->loader, "assets/stockterm.png");
 	game->assets.texWeaponTerminal = juLoaderGetTexture(game->loader, "assets/weaponterm.png");
 	game->assets.texCursor = juLoaderGetTexture(game->loader, "assets/cursor.png");
+	game->assets.texDown = juLoaderGetTexture(game->loader, "assets/down.png");
+	game->assets.texUp = juLoaderGetTexture(game->loader, "assets/up.png");
 	game->assets.bgTerminal = juLoaderGetTexture(game->loader, "assets/terminalbg.png");
 	game->assets.sprButtonYes = juLoaderGetSprite(game->loader, "assets/yesbutton.png");
 	game->assets.texPlanets[0] = juLoaderGetTexture(game->loader, "assets/planet1.png");
@@ -557,6 +587,8 @@ void pnlInit(PNLRuntime game) {
 	game->assets.texStocks[3] = juLoaderGetTexture(game->loader, "assets/stock4.png");
 	game->assets.texStocks[4] = juLoaderGetTexture(game->loader, "assets/stock5.png");
 	game->assets.sprButtonLaunch = juLoaderGetSprite(game->loader, "assets/launchbutton.png");
+	game->assets.sprButtonBuy = juLoaderGetSprite(game->loader, "assets/buybutton.png");
+	game->assets.sprButtonSell	 = juLoaderGetSprite(game->loader, "assets/sellbutton.png");
 	game->assets.sprStars = juLoaderGetSprite(game->loader, "assets/stars.png");
 
 	// Build home grid
