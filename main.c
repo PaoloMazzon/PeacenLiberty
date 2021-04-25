@@ -109,9 +109,9 @@ const int MIN_ENEMY_SPAWN_DISTANCE = 200; // Nearest and farthest away from the 
 const int MAX_ENEMY_SPAWN_DISTANCE = 500;
 const int MAX_MINERAL_SPAWN_DISTANCE = 2000; // How far minerals will spawn from the player
 const int MIN_MINERAL_SPAWN_DISTANCE = 50;
-const int MAX_BULLETS = 50; // Maximum number of bullets present at once (because I'm allergic to the hepa)
-const int MAX_MINERALS = 200; // Max minerals in a world
-const int MAX_ENEMIES = 30; // Max enemies in a world at once
+#define MAX_BULLETS ((int)50) // Maximum number of bullets present at once (because I'm allergic to the hepa)
+#define MAX_MINERALS ((int)200) // Max minerals in a world
+#define MAX_ENEMIES ((int)30) // Max enemies in a world at once
 
 const real STOCK_BASE_PRICE = 5; // Base price of all stocks, they will fluctuate from this
 const char *STOCK_NAMES[] = { // Names of the materials you gather
@@ -189,6 +189,7 @@ JULoadedAsset ASSETS[] = {
 		{"assets/sellbutton.png", 0, 0, 58, 29, 0, 3},
 		{"assets/buy10button.png", 0, 0, 58, 29, 0, 3},
 		{"assets/sell10button.png", 0, 0, 58, 29, 0, 3},
+		{"assets/shipbutton.png", 0, 0, 75, 75, 0, 3, 0, 0},
 		{"assets/enemy.png", 0, 0, 16, 24, 0.25, 4},
 		{"assets/home.png"},
 		{"assets/overlay.jufnt"},
@@ -219,6 +220,7 @@ JULoadedAsset ASSETS[] = {
 		{"assets/sword.png"},
 		{"assets/bullet.png"},
 		{"assets/whoosh.png"},
+		{"assets/compass.png"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 #define PLANET_TEXTURE_COUNT ((int)5)
@@ -317,6 +319,7 @@ typedef struct PNLPlanet {
 	PNLPlanetSpecs spec; // Spec this planet comes from
 	PNLMineral minerals[MAX_MINERALS];
 	PNLEnemy enemies[MAX_ENEMIES];
+	PNLInventory inventory;
 } PNLPlanet;
 
 typedef struct PNLAssets {
@@ -339,6 +342,7 @@ typedef struct PNLAssets {
 	JUSprite sprButtonSell;
 	JUSprite sprButtonBuy10;
 	JUSprite sprButtonSell10;
+	JUSprite sprButtonShip;
 	VK2DTexture texAssaultRifle;
 	VK2DTexture bgOnsite;
 	VK2DTexture texPistol;
@@ -347,6 +351,7 @@ typedef struct PNLAssets {
 	VK2DTexture texSword;
 	VK2DTexture texBullet;
 	VK2DTexture texWhoosh;
+	VK2DTexture texCompass;
 	JUSprite sprEnemy;
 	JUFont fntOverlay;
 } PNLAssets;
@@ -888,9 +893,36 @@ void pnlDrawTitleBar(PNLRuntime game) {
 	vk2dDrawRectangle(cam.x, cam.y, cam.w, 20);
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
 	if (game->onSite)
-		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "%s | Dosh: $%.2f | Fame: %.0f | FPS: %.1f", PLANET_NAMES[game->planet.spec.planetNameIndex], (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
+		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "%s | Dosh: $%.2f | Fame: %.0f | FPS: %.1f | Inventory [on-hand/on-ship]", PLANET_NAMES[game->planet.spec.planetNameIndex], (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
 	else
 		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Home | Dosh: $%.2f | Fame: %.0f | FPS: %.1f", (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
+}
+
+void pnlLoadMineralsIntoShip(PNLRuntime game) {
+	for (int i = 0; i < STOCK_TRADE_COUNT; i++) {
+		game->planet.inventory.onShipInventory[i] += game->planet.inventory.onHandInventory[i];
+		game->planet.inventory.onHandInventory[i] = 0;
+	}
+}
+
+void pnlDrawMineralOverlay(PNLRuntime game) {
+	VK2DCamera cam = vk2dRendererGetCamera();
+	float x = cam.x;
+	float y = cam.y + cam.h - 29;
+	vk2dRendererSetColourMod(VK2D_BLACK);
+	vk2dDrawRectangle(x, y, cam.w, 29);
+	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+	for (int i = 0; i < STOCK_TRADE_COUNT; i++) {
+		vk2dDrawTextureExt(game->assets.texStocks[i], x, y, 0.5, 0.5, 0, 0, 0);
+		juFontDraw(game->assets.fntOverlay, x + 35, y, "%i/%i", game->planet.inventory.onHandInventory[i], game->planet.inventory.onShipInventory[i]);
+		x += 120;
+	}
+
+	vk2dDrawTexture(game->assets.texCompass, cam.x + 4, cam.y + 20 + 4);
+	vk2dRendererSetColourMod(VK2D_RED);
+	float dir = juPointAngle(game->player.pos.x, game->player.pos.y, 0, 0) - (VK2D_PI / 2);
+	vk2dDrawLine(cam.x + 16 + 4, cam.y + 20 + 16 + 4, 4 + cam.x + 16 + (cos(dir) * 13), 4 + cam.y + 16 + 20 - (sin(dir) * 13));
+	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
 }
 
 /********************** Functions specific to regions **********************/
@@ -903,6 +935,8 @@ void pnlInitHome(PNLRuntime game) {
 		game->market.stockCosts[i] = STOCK_BASE_PRICE * (1 + (mult * (STOCK_FLUCTUATION[i] * randr())));
 	}
 	game->player.hp = PLAYER_MAX_HP;
+	game->player.pos.x = 0;
+	game->player.pos.y = 0;
 }
 
 WorldSelection pnlUpdateHome(PNLRuntime game) {
@@ -943,16 +977,31 @@ void pnlQuitHome(PNLRuntime game) {
 void pnlInitPlanet(PNLRuntime game) {
 	game->fadeIn = true;
 	game->fadeClock = 0;
+
+	for (int i = 0; i < STOCK_TRADE_COUNT; i++) {
+		game->planet.inventory.onShipInventory[i] = 0;
+		game->planet.inventory.onHandInventory[i] = 0;
+	}
+	game->player.pos.x = 150;
+	game->player.pos.y = 150;
 }
 
 WorldSelection pnlUpdatePlanet(PNLRuntime game) {
+	// Draw background and ship
 	pnlDrawTiledBackground(game, game->assets.bgOnsite);
+	if (pnlDrawButton(game, game->assets.sprButtonShip, 0, 0) && !game->fadeOut) {
+		game->fadeClock = 0;
+		game->fadeOut = true;
+		pnlLoadMineralsIntoShip(game);
+	}
 
+	// Update player bullets and enemies
 	pnlPlayerUpdate(game, true);
 	pnlUpdateBullets(game);
 
-	// UI
+	// Draw title and the element overlay
 	pnlDrawTitleBar(game);
+	pnlDrawMineralOverlay(game);
 
 	// DEBUG
 	if (juKeyboardGetKey(SDL_SCANCODE_BACKSPACE)) {
@@ -977,7 +1026,8 @@ WorldSelection pnlUpdatePlanet(PNLRuntime game) {
 }
 
 void pnlQuitPlanet(PNLRuntime game) {
-	// TODO: This
+	for (int i = 0; i < STOCK_TRADE_COUNT; i++)
+		game->market.stockOwned[i] += game->planet.inventory.onShipInventory[i];
 }
 
 /********************** Core game functions **********************/
@@ -1010,6 +1060,7 @@ void pnlInit(PNLRuntime game) {
 	game->assets.sprButtonSell = juLoaderGetSprite(game->loader, "assets/sellbutton.png");
 	game->assets.sprButtonBuy10 = juLoaderGetSprite(game->loader, "assets/buy10button.png");
 	game->assets.sprButtonSell10 = juLoaderGetSprite(game->loader, "assets/sell10button.png");
+	game->assets.sprButtonShip = juLoaderGetSprite(game->loader, "assets/shipbutton.png");
 	game->assets.sprStars = juLoaderGetSprite(game->loader, "assets/stars.png");
 	game->assets.texAssaultRifle = juLoaderGetTexture(game->loader, "assets/assaultrifle.png");
 	game->assets.bgOnsite = juLoaderGetTexture(game->loader, "assets/onsite.png");
@@ -1019,6 +1070,7 @@ void pnlInit(PNLRuntime game) {
 	game->assets.texSword = juLoaderGetTexture(game->loader, "assets/sword.png");
 	game->assets.texBullet = juLoaderGetTexture(game->loader, "assets/bullet.png");
 	game->assets.texWhoosh = juLoaderGetTexture(game->loader, "assets/whoosh.png");
+	game->assets.texCompass = juLoaderGetTexture(game->loader, "assets/compass.png");
 	game->assets.sprEnemy = juLoaderGetSprite(game->loader, "assets/enemy.png");
 
 	// Build home grid
