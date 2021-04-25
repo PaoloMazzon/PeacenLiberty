@@ -34,9 +34,18 @@ typedef enum {
 	tc_Goto = 3, // Go to a selected planet
 } TerminalCode;
 
+typedef enum {
+	wt_Sword,
+	wt_Shotgun,
+	wt_AssaultRifle,
+	wt_Sniper,
+	wt_Pistol,
+} WeaponType;
+
 /********************** Constants **********************/
 const int GAME_WIDTH = 600;
 const int GAME_HEIGHT = 400;
+const int WINDOW_SCALE = 2;
 const char *GAME_TITLE = "Peace & Liberty";
 const char *SAVE_FILE = "save.bin";
 const char *SAVE_HIGHSCORE = "hs";
@@ -61,6 +70,17 @@ const real DOSH_UPKEEP_COST = 400; // Charged
 const real DOSH_UPKEEP_VARIANCE = 70;
 const real IN_RANGE_TERMINAL_DISTANCE = 30; // Distance away from a terminal considered to be "in-range"
 #define GENERATED_PLANET_COUNT ((int)5) // Number of planets the player can choose from
+const int WEAPON_MIN_SPREAD = 1; // Minimum/maximum pellets per shotgun blast
+const int WEAPON_MAX_SPREAD = 8;
+const real WEAPON_MIN_DAMAGE = 20;
+const real WEAPON_MAX_DAMAGE = 50;
+const real ENEMY_HP = 100;
+const real ENEMY_HP_VARIANCE = 0.3; // Enemy hp can be +/- this percent hp
+const real WEAPON_SWORD_DAMAGE_MULTIPLIER = 2; // Basically faster weapons get less damage
+const real WEAPON_SHOTGUN_DAMAGE_MULTIPLIER = 0.5;
+const real WEAPON_ASSAULTRIFLE_DAMAGE_MULTIPLIER = 0.4;
+const real WEAPON_SNIPER_DAMAGE_MULTIPLIER = 3;
+const real WEAPON_PISTOL_DAMAGE_MULTIPLIER = 1;
 
 const real STOCK_BASE_PRICE = 5; // Base price of all stocks, they will fluctuate from this
 const char *STOCK_NAMES[] = { // Names of the materials you gather
@@ -78,6 +98,27 @@ const real STOCK_FLUCTUATION[] = { // Percent that they can fluctuate on the mar
 	0.9,
 };
 #define STOCK_TRADE_COUNT ((int)5) // Number of items that can be traded
+
+const char *WEAPON_NAME_FIRST[] = {
+		"Freedom",
+		"Liberty",
+		"Democracy",
+		"Petrol",
+		"Calculating",
+		"Wenrad",
+		"Gnome",
+};
+const int WEAPON_NAME_FIRST_COUNT = sizeof(WEAPON_NAME_FIRST) / sizeof(const char*);
+
+const char *WEAPON_NAME_SECOND[] = {
+		"Disperser",
+		"Liberator",
+		"Giver",
+		"Savage",
+		"Destroyer",
+		"Hacker",
+};
+const int WEAPON_NAME_SECOND_COUNT = sizeof(WEAPON_NAME_SECOND) / sizeof(const char*);
 
 const HomeBlocks HOME_WORLD_GRID[] = {
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
@@ -149,12 +190,20 @@ typedef struct PNLHomeBlock { // Things in the home world for the player to inte
 	real x, y;
 } PNLHomeBlock;
 
+typedef struct PNLWeapon {
+	real weaponDamage;
+	real weaponPellets; // Number of pellets for a shotgun
+	vec4 weaponColourMod;
+	WeaponType weaponType;
+} PNLWeapon;
+
 typedef struct PNLPlayer {
 	physvec2 pos;
 	physvec2 velocity;
 	JUSprite sprite;
 	real dosh;
 	real fame;
+	real hp;
 } PNLPlayer;
 
 const PNLPlayer PLAYER_DEFAULT_STATE = {
@@ -163,6 +212,7 @@ const PNLPlayer PLAYER_DEFAULT_STATE = {
 		NULL,
 		1000,
 		0,
+		100,
 };
 
 typedef struct PNLStockMarket {
@@ -661,12 +711,12 @@ void pnlInit(PNLRuntime game) {
 // Called before the rendering begins
 void pnlPreFrame(PNLRuntime game) {
 	VK2DCamera cam = vk2dRendererGetCamera();
-	float destX = game->player.pos.x - (game->ww / 2);
-	float destY = game->player.pos.y - (game->wh / 2);
+	float destX = game->player.pos.x - (GAME_WIDTH / 2);
+	float destY = game->player.pos.y - (GAME_HEIGHT / 2);
 	cam.x += (destX - cam.x) * PHYS_CAMERA_FRICTION * juDelta();
 	cam.y += (destY - cam.y) * PHYS_CAMERA_FRICTION * juDelta();
-	cam.w = game->ww;
-	cam.h = game->wh;
+	cam.w = GAME_WIDTH;
+	cam.h = GAME_HEIGHT;
 	cam.zoom = 1;//game->wh / GAME_HEIGHT;
 	vk2dRendererSetCamera(cam);
 }
@@ -686,16 +736,6 @@ void pnlUpdate(PNLRuntime game) {
 			pnlInitPlanet(game);
 		}
 	}
-	/*
-	if (game->onSite && pnlUpdatePlanet(game) == ws_Home) {
-		game->onSite = false;
-		pnlQuitPlanet(game);
-		pnlInitHome(game);
-	} else if (!game->onSite && pnlUpdateHome(game) == ws_Offsite) {
-		game->onSite = false;
-		pnlQuitHome(game);
-		pnlInitPlanet(game);
-	}*/
 	vk2dDrawTexture(game->assets.texCursor, game->mouseX - 4, game->mouseY - 4);
 }
 
@@ -709,7 +749,7 @@ void pnlQuit(PNLRuntime game) {
 /********************** main lmao **********************/
 int main() {
 	// Init TODO: Make resizeable
-	SDL_Window *window = SDL_CreateWindow(GAME_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, GAME_WIDTH, GAME_HEIGHT, SDL_WINDOW_VULKAN);
+	SDL_Window *window = SDL_CreateWindow(GAME_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, GAME_WIDTH * WINDOW_SCALE, GAME_HEIGHT * WINDOW_SCALE, SDL_WINDOW_VULKAN);
 	VK2DRendererConfig config = {
 			msaa_16x,
 			sm_TripleBuffer,
@@ -776,7 +816,7 @@ int main() {
 			vk2dRendererSetTarget(VK2D_TARGET_SCREEN);
 			vk2dRendererSetViewport(0, 0, w, h);
 			cam = vk2dRendererGetCamera();
-			vk2dDrawTexture(backbuffer, cam.x, cam.y);
+			vk2dDrawTextureExt(backbuffer, cam.x, cam.y, 1, 1, 0, 0, 0);
 			vk2dRendererEndFrame();
 		}
 	}
