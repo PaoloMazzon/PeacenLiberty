@@ -80,6 +80,11 @@ const real WEAPON_SHOTGUN_DAMAGE_MULTIPLIER = 0.5; // Shotguns have lots of pell
 const real WEAPON_ASSAULTRIFLE_DAMAGE_MULTIPLIER = 0.4; // Assault rifles are fast and long-range so low damage
 const real WEAPON_SNIPER_DAMAGE_MULTIPLIER = 3; // Sniper shoots slow but pierces so high damage
 const real WEAPON_PISTOL_DAMAGE_MULTIPLIER = 1; // Starting weapon
+const real WEAPON_SWORD_RECOIL = 0; // Velocity applied in the opposite direction when firing a given weapon
+const real WEAPON_SHOTGUN_RECOIL = 4;
+const real WEAPON_ASSAULTRIFLE_RECOIL = 1;
+const real WEAPON_SNIPER_RECOIL = 8;
+const real WEAPON_PISTOL_RECOIL = 2;
 const int WEAPON_MAX_BPS = 5; // Max/minimum bullets fired per second for assault rifles
 const int WEAPON_MIN_BPS = 2;
 const real WEAPON_BASE_COST = 200; // How much a weapon costs base - can be more depending on how good the weapon is
@@ -159,7 +164,7 @@ const char *PLANET_NAMES[] = {
 const int PLANET_NAMES_COUNT = sizeof(PLANET_NAMES) / sizeof(const char *);
 
 JULoadedAsset ASSETS[] = {
-		{"assets/player.png", 0, 0, 16, 24},
+		{"assets/player.png", 0, 0, 16, 24, 0, 1, 8, 12},
 		{"assets/yesbutton.png", 0, 0, 50, 50, 0, 3},
 		{"assets/stars.png", 0, 0, 29, 29, 0, 4},
 		{"assets/launchbutton.png", 0, 0, 58, 58, 0, 3},
@@ -190,7 +195,7 @@ JULoadedAsset ASSETS[] = {
 		{"assets/up.png"},
 		{"assets/assaultrifle.png"},
 		{"assets/onsite.png"},
-		{"assets/pistol"},
+		{"assets/pistol.png"},
 		{"assets/shotgun.png"},
 		{"assets/sniper.png"},
 		{"assets/sword.png"},
@@ -221,6 +226,7 @@ typedef struct PNLPlayer {
 	physvec2 pos;
 	physvec2 velocity;
 	JUSprite sprite;
+	PNLWeapon weapon;
 	real dosh;
 	real fame;
 	real hp;
@@ -294,7 +300,7 @@ typedef struct PNLAssets {
 	JUSprite sprButtonBuy10;
 	JUSprite sprButtonSell10;
 	VK2DTexture texAssaultRifle;
-	VK2DTexture texOnsite;
+	VK2DTexture bgOnsite;
 	VK2DTexture texPistol;
 	VK2DTexture texShotgun;
 	VK2DTexture texSniper;
@@ -503,7 +509,12 @@ TerminalCode pnlUpdateWeaponsTerminal(PNLRuntime game) {
 
 
 /********************** Player and other entities **********************/
+void pnlDrawWeapon(PNLRuntime game, PNLWeapon wep, float x, float y, float r, float xscale, float yscale);
 void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
+	// Handle weapons
+	float lookingDir = juPointAngle(game->player.pos.x, game->player.pos.y, game->mouseX, game->mouseY);
+
+
 	// Move
 	physvec2 oldVel = game->player.velocity;
 	game->player.velocity.x += (((real)juKeyboardGetKey(SDL_SCANCODE_D)) - ((real)juKeyboardGetKey(SDL_SCANCODE_A))) * PHYS_ACCELERATION * juDelta();
@@ -531,8 +542,10 @@ void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 	game->player.pos = addPhysVec2(game->player.pos, game->player.velocity);
 
 	// Draw player
-	if (drawPlayer)
+	if (drawPlayer) {
 		juSpriteDraw(game->player.sprite, game->player.pos.x, game->player.pos.y);
+		pnlDrawWeapon(game, game->player.weapon, game->player.pos.x, game->player.pos.y - 4, lookingDir, 1, 1);
+	}
 }
 
 void pnlDrawTiledBackground(PNLRuntime game, VK2DTexture bg) {
@@ -693,6 +706,23 @@ PNLWeapon pnlGenerateWeapon(PNLRuntime game, WeaponType weaponType) {
 	return wep;
 }
 
+void pnlDrawWeapon(PNLRuntime game, PNLWeapon wep, float x, float y, float r, float xscale, float yscale) {
+	VK2DTexture tex;
+	if (wep.weaponType == wt_Pistol)
+		tex = game->assets.texPistol;
+	else if (wep.weaponType == wt_AssaultRifle)
+		tex = game->assets.texAssaultRifle;
+	else if (wep.weaponType == wt_Sword)
+		tex = game->assets.texSword;
+	else if (wep.weaponType == wt_Shotgun)
+		tex = game->assets.texShotgun;
+	else
+		tex = game->assets.texSniper;
+	vk2dRendererSetColourMod(wep.weaponColourMod);
+	vk2dRendererDrawTexture(tex, x, y, xscale, yscale, r, 0, tex->img->height / 2, 0, 0, tex->img->width, tex->img->height);
+	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+}
+
 /********************** Functions specific to regions **********************/
 void pnlInitHome(PNLRuntime game) {
 	for (int i = 0; i < GENERATED_PLANET_COUNT; i++)
@@ -748,6 +778,8 @@ void pnlInitPlanet(PNLRuntime game) {
 }
 
 WorldSelection pnlUpdatePlanet(PNLRuntime game) {
+	pnlDrawTiledBackground(game, game->assets.bgOnsite);
+
 	pnlPlayerUpdate(game, true);
 
 	// DEBUG
@@ -808,8 +840,8 @@ void pnlInit(PNLRuntime game) {
 	game->assets.sprButtonSell10 = juLoaderGetSprite(game->loader, "assets/sell10button.png");
 	game->assets.sprStars = juLoaderGetSprite(game->loader, "assets/stars.png");
 	game->assets.texAssaultRifle = juLoaderGetTexture(game->loader, "assets/assaultrifle.png");
-	game->assets.texOnsite = juLoaderGetTexture(game->loader, "assets/onsite.png");
-	game->assets.texPistol = juLoaderGetTexture(game->loader, "assets/pistol");
+	game->assets.bgOnsite = juLoaderGetTexture(game->loader, "assets/onsite.png");
+	game->assets.texPistol = juLoaderGetTexture(game->loader, "assets/pistol.png");
 	game->assets.texShotgun = juLoaderGetTexture(game->loader, "assets/shotgun.png");
 	game->assets.texSniper = juLoaderGetTexture(game->loader, "assets/sniper.png");
 	game->assets.texSword = juLoaderGetTexture(game->loader, "assets/sword.png");
@@ -828,12 +860,13 @@ void pnlInit(PNLRuntime game) {
 		}
 	}
 
-	// Load default player state
+	// Load default player state and give a weapon
 	memcpy(&game->player, &PLAYER_DEFAULT_STATE, sizeof(struct PNLPlayer));
 	game->player.sprite = juLoaderGetSprite(game->loader, "assets/player.png");
+	game->player.weapon = pnlGenerateWeapon(game, wt_Pistol);
 
 	// Debug - generate a bunch of random weapons
-	/*FILE *file = fopen("weapons.csv", "w");
+	/*FILE *file = fopen("weapons/.csv", "w");
 	const char *wepnames[] = {
 			"Sword",
 			"Shotgun",
