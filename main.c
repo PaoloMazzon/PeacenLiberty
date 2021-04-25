@@ -35,11 +35,12 @@ typedef enum {
 } TerminalCode;
 
 typedef enum {
-	wt_Sword,
-	wt_Shotgun,
-	wt_AssaultRifle,
-	wt_Sniper,
-	wt_Pistol,
+	wt_Sword = 0,
+	wt_Shotgun = 1,
+	wt_AssaultRifle = 2,
+	wt_Sniper = 3,
+	wt_Pistol = 4,
+	wt_Any = 5,
 } WeaponType;
 
 /********************** Constants **********************/
@@ -208,6 +209,10 @@ typedef struct PNLHomeBlock { // Things in the home world for the player to inte
 typedef struct PNLWeapon {
 	real weaponDamage;
 	real weaponPellets; // Number of pellets for a shotgun
+	real weaponCost;
+	real weaponBPS;
+	int weaponNameFirstIndex; // Indices for random weapon names
+	int weaponNameSecondIndex;
 	vec4 weaponColourMod;
 	WeaponType weaponType;
 } PNLWeapon;
@@ -643,6 +648,51 @@ TerminalCode pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the
 	return code;
 }
 
+// Generates a random weapon, specify wt_Any for a random weapon or wt_whatever for a specific type of weapon
+PNLWeapon pnlGenerateWeapon(PNLRuntime game, WeaponType weaponType) {
+	PNLWeapon wep;
+
+	// Choose random type
+	if (weaponType == wt_Any) {
+		WeaponType types[] = {wt_AssaultRifle, wt_Shotgun, wt_Sniper, wt_Sword};
+		weaponType = types[(int)floor(randr() * 4)];
+	}
+
+	// Universal attributes
+	wep.weaponColourMod[0] = (float)randr();
+	wep.weaponColourMod[1] = (float)randr();
+	wep.weaponColourMod[2] = (float)randr();
+	wep.weaponColourMod[3] = 1;
+	wep.weaponNameFirstIndex = (int)floor(randr() * WEAPON_NAME_FIRST_COUNT);
+	wep.weaponNameSecondIndex = (int)floor(randr() * WEAPON_NAME_SECOND_COUNT);
+	wep.weaponType = weaponType;
+	real bpsPercent = randr();
+	wep.weaponBPS = WEAPON_MIN_BPS + (WEAPON_MAX_BPS * bpsPercent);
+	real damagePercent = randr();
+	wep.weaponDamage = WEAPON_MIN_DAMAGE + (WEAPON_MAX_DAMAGE * damagePercent);
+	real pelletsPercent = randr();
+	wep.weaponPellets = WEAPON_MIN_SPREAD + round(WEAPON_MAX_SPREAD * pelletsPercent);
+
+	// Weapon cost is universal even though certain aspects of a weapon are specific to certain weapon types
+	real multiplier = 1 + (bpsPercent * WEAPON_COST_BPS_MULTIPLIER) + (damagePercent * WEAPON_COST_DAMAGE_MULTIPLIER) + (pelletsPercent * WEAPON_COST_SPREAD_MULTIPLIER);
+	wep.weaponCost = WEAPON_BASE_COST * multiplier;
+
+	// Stuff specific to weapons
+	if (weaponType == wt_Pistol) {
+		wep.weaponDamage *= WEAPON_PISTOL_DAMAGE_MULTIPLIER;
+	} else if (weaponType == wt_Sniper) {
+		wep.weaponDamage *= WEAPON_SNIPER_DAMAGE_MULTIPLIER;
+	} else if (weaponType == wt_Shotgun) {
+		wep.weaponDamage *= WEAPON_SHOTGUN_DAMAGE_MULTIPLIER;
+	} else if (weaponType == wt_Sword) {
+		wep.weaponDamage *= WEAPON_SWORD_DAMAGE_MULTIPLIER;
+	} else if (weaponType == wt_AssaultRifle) {
+		wep.weaponDamage *= WEAPON_ASSAULTRIFLE_DAMAGE_MULTIPLIER;
+	}
+
+	return wep;
+}
+
 /********************** Functions specific to regions **********************/
 void pnlInitHome(PNLRuntime game) {
 	for (int i = 0; i < GENERATED_PLANET_COUNT; i++)
@@ -781,6 +831,21 @@ void pnlInit(PNLRuntime game) {
 	// Load default player state
 	memcpy(&game->player, &PLAYER_DEFAULT_STATE, sizeof(struct PNLPlayer));
 	game->player.sprite = juLoaderGetSprite(game->loader, "assets/player.png");
+
+	// Debug - generate a bunch of random weapons
+	/*FILE *file = fopen("weapons.csv", "w");
+	const char *wepnames[] = {
+			"Sword",
+			"Shotgun",
+			"AssaultRifle",
+			"Sniper",
+   			"Pistol",
+	};
+	for (int i = 0; i < 100; i++) {
+		PNLWeapon w = pnlGenerateWeapon(game, wt_Any);
+		fprintf(file, "%s %s,%s,%f damage,%f bps,%f spread,$%f,RGB:%f|%f|%f\n", WEAPON_NAME_FIRST[w.weaponNameFirstIndex], WEAPON_NAME_SECOND[w.weaponNameSecondIndex], wepnames[w.weaponType], w.weaponDamage, w.weaponBPS, w.weaponPellets, w.weaponCost, w.weaponColourMod[0], w.weaponColourMod[1], w.weaponColourMod[2]);
+	}
+	fclose(file);*/
 
 	pnlInitHome(game);
 }
