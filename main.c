@@ -130,7 +130,7 @@ const int MAX_MINERAL_SPAWN_DISTANCE = 4000; // How far minerals will spawn from
 const int MIN_MINERAL_SPAWN_DISTANCE = 300;
 const real MINERAL_PICKUP_RANGE = 20; // range at which minerals are "picked up"
 const real MINERAL_MOVE_RANGE = 100; // range at which minerals move towards the player
-const real MINERAL_MOVE_SPEED = 50; // how fast they move towards the player
+const real MINERAL_MOVE_SPEED = 150; // how fast they move towards the player
 const int MAX_MINERAL_PICKUP = 5; // max/min minerals you can pickup at once
 const int MIN_MINERAL_PICKUP = 1;
 const real MINERAL_DEPOSIT_RANGE = 100;
@@ -462,6 +462,14 @@ real absr(real a) {
 	return a < 0 ? -a : a;
 }
 
+real clamp(real a, real low, real high) {
+	if (a < low)
+		return low;
+	if (a > high)
+		return high;
+	return a;
+}
+
 real roundTo(real a, real to) {
 	return floor(a / to) * to;
 }
@@ -752,6 +760,8 @@ void _pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 
 	// Apply velocity
 	game->player.pos = addPhysVec2(game->player.pos, game->player.velocity);
+	game->player.pos.x = clamp(game->player.pos.x, -MAX_MINERAL_SPAWN_DISTANCE, MAX_MINERAL_SPAWN_DISTANCE);
+	game->player.pos.y = clamp(game->player.pos.y, -MAX_MINERAL_SPAWN_DISTANCE, MAX_MINERAL_SPAWN_DISTANCE);
 
 	// Draw player
 	if (drawPlayer && !(game->player.hitcooldown > 0 && sin((game->time / VK2D_PI) * 4) > 1)) {
@@ -1121,10 +1131,25 @@ void pnlUpdateEnemies(PNLRuntime game) {
 				game->player.kills += 1;
 			} else {
 				float angle = juPointAngle(game->planet.enemies[i].x, game->planet.enemies[i].y, game->player.pos.x, game->player.pos.y) - (VK2D_PI / 2);
-				game->planet.enemies[i].x += cos(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) * juDelta();
-				game->planet.enemies[i].y -= sin(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) * juDelta();
+				float distance = juPointDistance(game->planet.enemies[i].x, game->planet.enemies[i].y, game->player.pos.x, game->player.pos.y);
 
-				if (juPointDistance(game->planet.enemies[i].x, game->planet.enemies[i].y, game->player.pos.x, game->player.pos.y) < ENEMY_HIT_DISTANCE && game->player.hitcooldown <= 0) {
+				if (distance > (float)GAME_WIDTH * 1.5) { // Move double speed when outside player view
+					game->planet.enemies[i].x +=
+							cos(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) *
+							juDelta();
+					game->planet.enemies[i].y -=
+							sin(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) *
+							juDelta();
+				} else {
+					game->planet.enemies[i].x +=
+							cos(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) *
+							juDelta() * 2;
+					game->planet.enemies[i].y -=
+							sin(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) *
+							juDelta() * 2;
+				}
+
+				if (distance < ENEMY_HIT_DISTANCE && game->player.hitcooldown <= 0) {
 					real mult = pow(ENEMY_DAMAGE_MULTIPLIER, (real)game->planet.spec.planetDifficulty);
 					game->player.hp -= (ENEMY_DAMAGE * mult) + (sign(randr() - 0.5) * ENEMY_DAMAGE_VARIANCE * ENEMY_DAMAGE * randr());
 					game->player.hitcooldown = ENEMY_HIT_DELAY;
@@ -1207,8 +1232,8 @@ void pnlInitPlanet(PNLRuntime game) {
 	// Scatter the minerals all around the place
 	for (int i = 0; i < MAX_MINERALS; i++) {
 		game->planet.minerals[i].active = true;
-		game->planet.minerals[i].pos.x = sign(randr() - 0.5) * (MIN_MINERAL_SPAWN_DISTANCE + ((MAX_MINERAL_SPAWN_DISTANCE) * randr()));
-		game->planet.minerals[i].pos.y = sign(randr() - 0.5) * (MIN_MINERAL_SPAWN_DISTANCE + ((MAX_MINERAL_SPAWN_DISTANCE) * randr()));
+		game->planet.minerals[i].pos.x = sign(randr() - 0.5) * (MIN_MINERAL_SPAWN_DISTANCE + ((MAX_MINERAL_SPAWN_DISTANCE - MIN_MINERAL_SPAWN_DISTANCE) * randr()));
+		game->planet.minerals[i].pos.y = sign(randr() - 0.5) * (MIN_MINERAL_SPAWN_DISTANCE + ((MAX_MINERAL_SPAWN_DISTANCE - MIN_MINERAL_SPAWN_DISTANCE) * randr()));
 		game->planet.minerals[i].stockIndex = (int)floor(randr() * STOCK_TRADE_COUNT);
 		game->planet.minerals[i].randomSeed = randr() * 10000;
 	}
@@ -1266,7 +1291,9 @@ WorldSelection pnlUpdatePlanet(PNLRuntime game) {
 		if (game->fadeClock >= FADE_IN_DURATION) {
 			// if the player died we need to reset the player
 			if (game->deathCooldown) {
+				JUSprite spr = game->player.sprite;
 				memcpy(&game->player, &PLAYER_DEFAULT_STATE, sizeof(struct PNLPlayer));
+				game->player.sprite = spr;
 				game->player.weapon = pnlGenerateWeapon(game, wt_Pistol);
 				for (int i = 0; i < STOCK_TRADE_COUNT; i++)
 					game->market.stockOwned[i] = 0;
