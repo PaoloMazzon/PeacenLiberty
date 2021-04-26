@@ -145,6 +145,7 @@ const float VOLUME_MUSIC_LEFT = 1;
 const float VOLUME_MUSIC_RIGHT = 1;
 const float VOLUME_EFFECT_LEFT = 0.5;
 const float VOLUME_EFFECT_RIGHT = 0.5;
+#define MAX_SHOP_LINES ((int)3)
 
 const real STOCK_BASE_PRICE = 5; // Base price of all stocks, they will fluctuate from this
 const char *STOCK_NAMES[] = { // Names of the materials you gather
@@ -270,6 +271,10 @@ JULoadedAsset ASSETS[] = {
 		{"assets/goofytrack.wav"},
 		{"assets/sombertrack.wav"},
 		{"assets/newgun.wav"},
+		{"assets/whatisawenrad.wav"},
+		{"assets/dontturnmypizzainsideout.wav"},
+		{"assets/justdontgethit.wav"},
+		{"assets/sword.wav"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 #define PLANET_TEXTURE_COUNT ((int)5)
@@ -420,6 +425,8 @@ typedef struct PNLAssets {
 	JUSound sndMusicSomber;
 	JUSound sndMusicGoofy;
 	JUSound sndNewGun;
+	JUSound sndShop[MAX_SHOP_LINES]; // 3 shop sound effect
+	JUSound sndSword;
 } PNLAssets;
 
 typedef struct PNLRuntime {
@@ -443,6 +450,8 @@ typedef struct PNLRuntime {
 	real fadeClock; // Counts up to FADE_IN_DURATION
 	bool deathCooldown;
 	bool highscore;
+	bool weaponLastFrame; // For playing sounds when walking into the shop
+	bool weaponThisFrame;
 
 	// Weapon store
 	PNLWeapon shop[MAX_WEAPONS_AT_RINKYS];
@@ -698,6 +707,7 @@ TerminalCode pnlUpdateStocksTerminal(PNLRuntime game) {
 
 PNLWeapon pnlGenerateWeapon(PNLRuntime game, WeaponType weaponType);
 TerminalCode pnlUpdateWeaponsTerminal(PNLRuntime game) {
+	game->weaponThisFrame = true;
 	VK2DCamera cam = vk2dRendererGetCamera();
 	// Coordinates to start drawing the background - the +3 is to account for the background's frame
 	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
@@ -945,6 +955,7 @@ PNLPlanetSpecs pnlCreatePlanetSpec(PNLRuntime game) {
 TerminalCode pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the player should be rendered
 	PNLHomeBlock *block = &game->home.blocks[index];
 	TerminalCode code = tc_Noop;
+	game->weaponLastFrame = game->weaponThisFrame;
 
 	if (block->type == hb_Memorial) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
@@ -973,10 +984,16 @@ TerminalCode pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the
 	} else if (block->type == hb_Weapons) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
 			vk2dDrawTexture(game->assets.texWeaponTerminal, block->x - (game->assets.texWeaponTerminal->img->width / 2), block->y - (game->assets.texWeaponTerminal->img->height / 2));
+			game->weaponThisFrame = false;
 		} else if (!game->fadeIn && !game->fadeOut) { // only do terminal things when not fading
 			code = pnlUpdateWeaponsTerminal(game);
 		}
+	} else {
+		game->weaponThisFrame = false;
 	}
+
+	if (!game->weaponLastFrame && game->weaponThisFrame)
+		juSoundPlay(game->assets.sndShop[(int)floor(randr() * MAX_SHOP_LINES)], false, VOLUME_EFFECT_LEFT, VOLUME_EFFECT_RIGHT);
 
 	return code;
 }
@@ -1451,6 +1468,10 @@ void pnlInit(PNLRuntime game) {
 	game->assets.sndMusicGoofy = juLoaderGetSound(game->loader, "assets/goofytrack.wav");
 	game->assets.sndMusicSomber = juLoaderGetSound(game->loader, "assets/sombertrack.wav");
 	game->assets.sndNewGun = juLoaderGetSound(game->loader, "assets/newgun.wav");
+	game->assets.sndShop[0] = juLoaderGetSound(game->loader, "assets/whatisawenrad.wav");
+	game->assets.sndShop[1] = juLoaderGetSound(game->loader, "assets/justdontgethit.wav");
+	game->assets.sndShop[2] = juLoaderGetSound(game->loader, "assets/dontturnmypizzainsideout.wav");
+	game->assets.sndSword = juLoaderGetSound(game->loader, "assets/sword.wav");
 
 	// Build home grid
 	for (int i = 0; i < HOME_WORLD_GRID_HEIGHT; i++) {
