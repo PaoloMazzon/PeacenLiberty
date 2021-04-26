@@ -1631,7 +1631,7 @@ int main() {
 	// Init TODO: Make resizeable
 	SDL_Window *window = SDL_CreateWindow(GAME_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, GAME_WIDTH * WINDOW_SCALE, GAME_HEIGHT * WINDOW_SCALE, SDL_WINDOW_VULKAN);
 	VK2DRendererConfig config = {
-			msaa_1x,
+			msaa_16x,
 			sm_Immediate,
 			ft_Nearest,
 	};
@@ -1641,6 +1641,10 @@ int main() {
 	SDL_Event e;
 	srand(time(NULL));
 	SDL_ShowCursor(0);
+
+	SDL_Surface *icon = SDL_LoadBMP("assets/icon.bmp");
+	SDL_SetWindowIcon(window, icon);
+	SDL_FreeSurface(icon);
 
 	// Backbuffer
 	VK2DTexture backbuffer = vk2dTextureCreate(vk2dRendererGetDevice(), GAME_WIDTH, GAME_HEIGHT);
