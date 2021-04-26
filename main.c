@@ -65,7 +65,7 @@ const real FAME_3_STAR_CUTOFF = 100;
 const real FAME_4_STAR_CUTOFF = 300;
 const real FAME_LOWER_STAR_CHANCE = 0.3; // Chance of mission being a star below current level
 const real DOSH_PLANET_COST = 200; // Cost of departing to a planet
-const real DOSH_MULTIPLIER = 2.5; // Cost multiplier per difficulty level
+const real DOSH_MULTIPLIER = 1.7; // Cost multiplier per difficulty level
 const real DOSH_PLANET_COST_VARIANCE = 50; // How much the cost can vary (also multiplied by cost multiplier)
 const real IN_RANGE_TERMINAL_DISTANCE = 30; // Distance away from a terminal considered to be "in-range"
 #define GENERATED_PLANET_COUNT ((int)5) // Number of planets the player can choose from
@@ -107,11 +107,18 @@ const real MAX_ZOOM = 1.5;
 const int MAX_ON_HAND_INVENTORY = 20; // Maximum you can hold of any 1 item
 const int MIN_ENEMY_SPAWN_DISTANCE = 200; // Nearest and farthest away from the player enemies can spawn
 const int MAX_ENEMY_SPAWN_DISTANCE = 500;
-const int MAX_MINERAL_SPAWN_DISTANCE = 2000; // How far minerals will spawn from the player
-const int MIN_MINERAL_SPAWN_DISTANCE = 50;
+const int MAX_MINERAL_SPAWN_DISTANCE = 4000; // How far minerals will spawn from the player
+const int MIN_MINERAL_SPAWN_DISTANCE = 300;
+const real MINERAL_PICKUP_RANGE = 20; // range at which minerals are "picked up"
+const real MINERAL_MOVE_RANGE = 100; // range at which minerals move towards the player
+const real MINERAL_MOVE_SPEED = 50; // how fast they move towards the player
+const int MAX_MINERAL_PICKUP = 5; // max/min minerals you can pickup at once
+const int MIN_MINERAL_PICKUP = 1;
+const real MINERAL_DEPOSIT_RANGE = 100;
 #define MAX_BULLETS ((int)50) // Maximum number of bullets present at once (because I'm allergic to the hepa)
 #define MAX_MINERALS ((int)200) // Max minerals in a world
 #define MAX_ENEMIES ((int)30) // Max enemies in a world at once
+const real NOTIFICATION_TIME = 2; // time in seconds notifications remain on screen (they fade out for half of this)
 
 const real STOCK_BASE_PRICE = 5; // Base price of all stocks, they will fluctuate from this
 const char *STOCK_NAMES[] = { // Names of the materials you gather
@@ -312,6 +319,8 @@ typedef struct PNLHome {
 typedef struct PNLMineral {
 	physvec2 pos;
 	int stockIndex;
+	bool active;
+	real randomSeed;
 } PNLMineral;
 
 // Information of the planet the sprite is on
@@ -375,6 +384,10 @@ typedef struct PNLRuntime {
 	bool fadeIn, fadeOut;
 	real fadeClock; // Counts up to FADE_IN_DURATION
 
+	// For notifications
+	real notificationTime;
+	const char *notificationMessage;
+
 	// Bullets
 	PNLBullet bullets[MAX_BULLETS];
 	int bulletIndex;
@@ -384,6 +397,7 @@ typedef struct PNLRuntime {
 	bool mouseLPressed, mouseLReleased, mouseLHeld;
 	bool mouseRPressed, mouseRReleased, mouseRHeld;
 	bool mouseMPressed, mouseMReleased, mouseMHeld;
+	real time; // time in seconds since the program started
 	int ww, wh;
 } *PNLRuntime;
 
@@ -427,6 +441,7 @@ bool pnlPlayerPurchase(PNLRuntime game, real dosh) {
 		return false;
 	}
 }
+void pnlSetNotification(PNLRuntime game, const char *string);
 
 /********************** Drawing/Updating Terminal Menus **********************/
 
@@ -523,23 +538,27 @@ TerminalCode pnlUpdateStocksTerminal(PNLRuntime game) {
 		if (pnlDrawButton(game, game->assets.sprButtonBuy, x + game->assets.bgTerminal->img->width - w - 9 - 58 - 2, y + 29)) {
 			if (pnlPlayerPurchase(game, game->market.stockCosts[i])) {
 				game->market.stockOwned[i] += 1;
+				pnlSetNotification(game, "Stock sold!");
 			}
 		}
 		if (pnlDrawButton(game, game->assets.sprButtonSell, x + game->assets.bgTerminal->img->width - w - 9, y + 29)) {
 			if (game->market.stockOwned[i] > 0) {
 				game->market.stockOwned[i] -= 1;
 				game->player.dosh += game->market.stockCosts[i];
+				pnlSetNotification(game, "Stock sold!");
 			}
 		}
 		if (pnlDrawButton(game, game->assets.sprButtonBuy10, x + game->assets.bgTerminal->img->width - w - 9 - 58 - 2, y)) {
 			if (pnlPlayerPurchase(game, game->market.stockCosts[i] * 10)) {
 				game->market.stockOwned[i] += 10;
+				pnlSetNotification(game, "10 stocks purchased!");
 			}
 		}
 		if (pnlDrawButton(game, game->assets.sprButtonSell10, x + game->assets.bgTerminal->img->width - w - 9, y)) {
 			if (game->market.stockOwned[i] >= 10) {
 				game->market.stockOwned[i] -= 10;
 				game->player.dosh += game->market.stockCosts[i] * 10;
+				pnlSetNotification(game, "10 stocks sold!");
 			}
 		}
 		y += h;
@@ -679,6 +698,11 @@ void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 	}
 }
 
+void pnlSetNotification(PNLRuntime game, const char *string) {
+	game->notificationTime = NOTIFICATION_TIME;
+	game->notificationMessage = string;
+}
+
 void pnlDrawTiledBackground(PNLRuntime game, VK2DTexture bg) {
 	// Draw background
 	VK2DCamera cam = vk2dRendererGetCamera();
@@ -811,11 +835,11 @@ PNLWeapon pnlGenerateWeapon(PNLRuntime game, WeaponType weaponType) {
 	wep.weaponNameSecondIndex = (int)floor(randr() * WEAPON_NAME_SECOND_COUNT);
 	wep.weaponType = weaponType;
 	real bpsPercent = randr();
-	wep.weaponBPS = WEAPON_MIN_BPS + (WEAPON_MAX_BPS * bpsPercent);
+	wep.weaponBPS = WEAPON_MIN_BPS + ((WEAPON_MAX_BPS - WEAPON_MIN_BPS) * bpsPercent);
 	real damagePercent = randr();
-	wep.weaponDamage = WEAPON_MIN_DAMAGE + (WEAPON_MAX_DAMAGE * damagePercent);
+	wep.weaponDamage = WEAPON_MIN_DAMAGE + ((WEAPON_MAX_DAMAGE - WEAPON_MIN_DAMAGE) * damagePercent);
 	real pelletsPercent = randr();
-	wep.weaponPellets = WEAPON_MIN_SPREAD + round(WEAPON_MAX_SPREAD * pelletsPercent);
+	wep.weaponPellets = WEAPON_MIN_SPREAD + round((WEAPON_MAX_SPREAD - WEAPON_MIN_SPREAD) * pelletsPercent);
 
 	// Weapon cost is universal even though certain aspects of a weapon are specific to certain weapon types
 	real multiplier = 1 + (bpsPercent * WEAPON_COST_BPS_MULTIPLIER) + (damagePercent * WEAPON_COST_DAMAGE_MULTIPLIER) + (pelletsPercent * WEAPON_COST_SPREAD_MULTIPLIER);
@@ -896,6 +920,18 @@ void pnlDrawTitleBar(PNLRuntime game) {
 		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "%s | Dosh: $%.2f | Fame: %.0f | FPS: %.1f | Inventory [on-hand/on-ship]", PLANET_NAMES[game->planet.spec.planetNameIndex], (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
 	else
 		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Home | Dosh: $%.2f | Fame: %.0f | FPS: %.1f", (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
+
+	// Draw notification at top left (after compass)
+	if (game->notificationTime > 0) {
+		vec4 cyan = {0, 1, 1, 1};
+		game->notificationTime -= juDelta();
+		if (game->notificationTime < NOTIFICATION_TIME / 2 && game->notificationTime > 0) {
+			cyan[3] = (game->notificationTime + juDelta()) / (NOTIFICATION_TIME / 2);
+		}
+		vk2dRendererSetColourMod(cyan);
+		juFontDraw(game->assets.fntOverlay, cam.x + 38, cam.y + 18, "%s", game->notificationMessage);
+		vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+	}
 }
 
 void pnlLoadMineralsIntoShip(PNLRuntime game) {
@@ -903,6 +939,7 @@ void pnlLoadMineralsIntoShip(PNLRuntime game) {
 		game->planet.inventory.onShipInventory[i] += game->planet.inventory.onHandInventory[i];
 		game->planet.inventory.onHandInventory[i] = 0;
 	}
+	pnlSetNotification(game, "Minerals loaded!");
 }
 
 void pnlDrawMineralOverlay(PNLRuntime game) {
@@ -923,6 +960,30 @@ void pnlDrawMineralOverlay(PNLRuntime game) {
 	float dir = juPointAngle(game->player.pos.x, game->player.pos.y, 0, 0) - (VK2D_PI / 2);
 	vk2dDrawLine(cam.x + 16 + 4, cam.y + 20 + 16 + 4, 4 + cam.x + 16 + (cos(dir) * 13), 4 + cam.y + 16 + 20 - (sin(dir) * 13));
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+}
+
+void pnlUpdateMinerals(PNLRuntime game) {
+	for (int i = 0; i < MAX_MINERALS; i++) {
+
+		if (game->planet.minerals[i].active) {
+			float dist = juPointDistance(game->planet.minerals[i].pos.x, game->planet.minerals[i].pos.y, game->player.pos.x, game->player.pos.y);
+			if (dist < GAME_WIDTH) {
+				vk2dDrawTextureExt(game->assets.texStocks[game->planet.minerals[i].stockIndex], game->planet.minerals[i].pos.x - 7, game->planet.minerals[i].pos.y - 15 - (sin(game->time + game->planet.minerals[i].randomSeed) * 3), 0.25, 0.25, 0, 0, 0);
+
+				if (dist <= MINERAL_MOVE_RANGE) {
+					real angle = juPointAngle(game->planet.minerals[i].pos.x, game->planet.minerals[i].pos.y, game->player.pos.x, game->player.pos.y) - (VK2D_PI / 2);
+					game->planet.minerals[i].pos.x += cos(angle) * MINERAL_MOVE_SPEED * juDelta();
+					game->planet.minerals[i].pos.y -= sin(angle) * MINERAL_MOVE_SPEED * juDelta();
+				}
+
+				if (dist <= MINERAL_PICKUP_RANGE) {
+					game->planet.minerals[i].active = false;
+					game->planet.inventory.onHandInventory[game->planet.minerals[i].stockIndex] += MIN_MINERAL_PICKUP + round((real)(MAX_MINERAL_PICKUP - MIN_MINERAL_PICKUP) * randr());
+					pnlSetNotification(game, "Grabbed minerals");
+				}
+			}
+		}
+	}
 }
 
 /********************** Functions specific to regions **********************/
@@ -984,6 +1045,15 @@ void pnlInitPlanet(PNLRuntime game) {
 	}
 	game->player.pos.x = 150;
 	game->player.pos.y = 150;
+
+	// Scatter the minerals all around the place
+	for (int i = 0; i < MAX_MINERALS; i++) {
+		game->planet.minerals[i].active = true;
+		game->planet.minerals[i].pos.x = sign(randr() - 0.5) * (MIN_MINERAL_SPAWN_DISTANCE + ((MAX_MINERAL_SPAWN_DISTANCE) * randr()));
+		game->planet.minerals[i].pos.y = sign(randr() - 0.5) * (MIN_MINERAL_SPAWN_DISTANCE + ((MAX_MINERAL_SPAWN_DISTANCE) * randr()));
+		game->planet.minerals[i].stockIndex = (int)floor(randr() * STOCK_TRADE_COUNT);
+		game->planet.minerals[i].randomSeed = randr() * 10000;
+	}
 }
 
 WorldSelection pnlUpdatePlanet(PNLRuntime game) {
@@ -995,9 +1065,13 @@ WorldSelection pnlUpdatePlanet(PNLRuntime game) {
 		pnlLoadMineralsIntoShip(game);
 	}
 
-	// Update player bullets and enemies
+	// Update player bullets minerals and enemies
+	pnlUpdateMinerals(game);
 	pnlPlayerUpdate(game, true);
 	pnlUpdateBullets(game);
+	if (juPointDistance(game->player.pos.x, game->player.pos.y, 39, 39) < MINERAL_DEPOSIT_RANGE) {
+		pnlLoadMineralsIntoShip(game);
+	}
 
 	// Draw title and the element overlay
 	pnlDrawTitleBar(game);
@@ -1028,6 +1102,7 @@ WorldSelection pnlUpdatePlanet(PNLRuntime game) {
 void pnlQuitPlanet(PNLRuntime game) {
 	for (int i = 0; i < STOCK_TRADE_COUNT; i++)
 		game->market.stockOwned[i] += game->planet.inventory.onShipInventory[i];
+	game->player.fame += game->planet.spec.fameBonus;
 }
 
 /********************** Core game functions **********************/
@@ -1233,6 +1308,7 @@ int main() {
 			vk2dRendererSetViewport(0, 0, GAME_WIDTH, GAME_HEIGHT);
 			vk2dRendererSetTarget(backbuffer);
 			vk2dRendererClear();
+			game->time += juDelta();
 			pnlUpdate(game);
 			vk2dRendererSetTarget(VK2D_TARGET_SCREEN);
 			vk2dRendererSetViewport(0, 0, w, h);
