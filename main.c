@@ -50,13 +50,16 @@ const int WINDOW_SCALE = 2;
 const char *GAME_TITLE = "Peace & Liberty";
 const char *SAVE_FILE = "save.bin";
 const char *SAVE_HIGHSCORE = "hs";
-const real PHYS_TERMINAL_VELOCITY = 8; // Physics variables - all in pixels/second
+const char *SAVE_DOSH = "dosh";
+const char *SAVE_KILLS = "kills";
+const char *SAVE_DEATH_PLANET = "planet";
+const char *SAVE_DIFFICULTY = "diff";
+const real PHYS_TERMINAL_VELOCITY = 7; // Physics variables - all in pixels/second
 const real PHYS_FRICTION = 30; // Only applies while the player is not giving a keyboard input
 const real PHYS_ACCELERATION = 18;
 const float PHYS_CAMERA_FRICTION = 8;
 const real WORLD_GRID_WIDTH = 50; // These are really only for the homeworld and honestly dont matter that much
 const real WORLD_GRID_HEIGHT = 90;
-const int DEST_PLANETS = 3; // How many planets to choose from for missions
 const real FAME_PER_PLANET = 30; // Base fame per planet for 1 star difficulty
 const real FAME_VARIANCE = 10; // Fame for a planet can fluctuate by +/- up to this amount
 const real FAME_MULTIPLIER = 1.6; // Multiplier per difficulty level
@@ -79,8 +82,16 @@ const real ENEMY_MAX_FAME = 3; // max/min dosh/fame an enemy kill grants
 const real ENEMY_MIN_FAME = 1;
 const real ENEMY_MAX_DOSH = 5;
 const real ENEMY_MIN_DOSH = 2;
-const real ENEMY_SPEED = 30;
-const real ENEMY_HIT_DISTANCE = 10; // distance from the player that counts as a "hit"
+const real ENEMY_SPEED_MULTIPLIER = 1.3;
+const real ENEMY_SPEED = 90;
+const real ENEMY_DAMAGE = 10; // base enemy damage and how much it can vary
+const real ENEMY_DAMAGE_VARIANCE = 0.2;
+const real ENEMY_DAMAGE_MULTIPLIER = 1.3; // Multipliers based on the difficulty level
+const real ENEMY_FAME_MULTIPLIER = 1.5;
+const real ENEMY_DOSH_MULTIPLIER = 2;
+const real ENEMY_HP_MULTIPLIER = 1.3;
+const real ENEMY_HIT_DELAY = 1;
+const real ENEMY_HIT_DISTANCE = 15; // distance from the player that counts as a "hit"
 const real ENEMY_SPAWN_DELAY = 3; // delay in seconds between enemy spawns
 const real ENEMY_SPAWN_DELAY_DECREASE = 0.05; // how much shorter the spawn delay gets each time an enemy spawn
 const real PLAYER_MAX_HP = 100;
@@ -113,8 +124,8 @@ const real FADE_IN_DURATION = 1; // In seconds
 const real MAX_ROT = VK2D_PI * 6; // "Fading in/out" is just rotating/zooming
 const real MAX_ZOOM = 1.5;
 const int MAX_ON_HAND_INVENTORY = 20; // Maximum you can hold of any 1 item
-const int MIN_ENEMY_SPAWN_DISTANCE = 200; // Nearest and farthest away from the player enemies can spawn
-const int MAX_ENEMY_SPAWN_DISTANCE = 500;
+const int MIN_ENEMY_SPAWN_DISTANCE = 400; // Nearest and farthest away from the player enemies can spawn
+const int MAX_ENEMY_SPAWN_DISTANCE = 600;
 const int MAX_MINERAL_SPAWN_DISTANCE = 4000; // How far minerals will spawn from the player
 const int MIN_MINERAL_SPAWN_DISTANCE = 300;
 const real MINERAL_PICKUP_RANGE = 20; // range at which minerals are "picked up"
@@ -127,6 +138,8 @@ const real MINERAL_DEPOSIT_RANGE = 100;
 #define MAX_MINERALS ((int)200) // Max minerals in a world
 #define MAX_ENEMIES ((int)30) // Max enemies in a world at once
 const real NOTIFICATION_TIME = 2; // time in seconds notifications remain on screen (they fade out for half of this)
+const real PLAYER_HEALTHBAR_WIDTH = 40;
+const real PLAYER_HEALTHBAR_HEIGHT = 8;
 
 const real STOCK_BASE_PRICE = 5; // Base price of all stocks, they will fluctuate from this
 const char *STOCK_NAMES[] = { // Names of the materials you gather
@@ -144,6 +157,14 @@ const real STOCK_FLUCTUATION[] = { // Percent that they can fluctuate on the mar
 	0.9,
 };
 #define STOCK_TRADE_COUNT ((int)5) // Number of items that can be traded
+
+// amount equal to difficulty levels
+const char *DIFFICULTY_NAMES[] = {
+		"Local Solar System",
+		"Galactic",
+		"Deep Space",
+		"The Seventh Circle",
+};
 
 const char *WEAPON_NAME_FIRST[] = {
 		"Freedom",
@@ -236,6 +257,8 @@ JULoadedAsset ASSETS[] = {
 		{"assets/bullet.png"},
 		{"assets/whoosh.png"},
 		{"assets/compass.png"},
+		{"assets/death.png"},
+		{"assets/deathhighscore.png"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 #define PLANET_TEXTURE_COUNT ((int)5)
@@ -280,6 +303,7 @@ typedef struct PNLPlayer {
 	real fame;
 	real hp;
 	int kills;
+	real hitcooldown;
 } PNLPlayer;
 
 const PNLPlayer PLAYER_DEFAULT_STATE = {
@@ -303,7 +327,6 @@ typedef struct PNLEnemy {
 	real dosh;
 	real fame;
 	real hp;
-	real attackDelay;
 	vec4 colour;
 	bool active;
 } PNLEnemy;
@@ -376,6 +399,8 @@ typedef struct PNLAssets {
 	VK2DTexture texBullet;
 	VK2DTexture texWhoosh;
 	VK2DTexture texCompass;
+	VK2DTexture texDeathScreen;
+	VK2DTexture texHighscoreScreen;
 	JUSprite sprEnemy;
 	JUFont fntOverlay;
 } PNLAssets;
@@ -398,6 +423,8 @@ typedef struct PNLRuntime {
 	// For fading in/out
 	bool fadeIn, fadeOut;
 	real fadeClock; // Counts up to FADE_IN_DURATION
+	bool deathCooldown;
+	bool highscore;
 
 	// For notifications
 	real notificationTime;
@@ -478,7 +505,12 @@ TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
 	vk2dDrawTexture(game->assets.bgTerminal, x - 3, y - 3);
 
 	if (juSaveKeyExists(game->save, SAVE_HIGHSCORE)) {
-		juFontDraw(game->assets.fntOverlay, x + 1, y - 2, "Highscore: %0.0f fame", juSaveGetDouble(game->save, SAVE_HIGHSCORE));
+		real hs = juSaveGetDouble(game->save, SAVE_HIGHSCORE);
+		real dosh = juSaveGetDouble(game->save, SAVE_DOSH);
+		real kills = juSaveGetDouble(game->save, SAVE_KILLS);
+		const char *planet = juSaveGetString(game->save, SAVE_DEATH_PLANET);
+		const char *difficulty = juSaveGetString(game->save, SAVE_DIFFICULTY);
+		juFontDraw(game->assets.fntOverlay, x + 1, y - 2, "\n\nHigh score: %.0f fame, $%.0f dosh\nFreedom delivered to: %i aliens\nDied on planet %s\nDistance: %s", hs, dosh, kills, planet, difficulty);
 	} else {
 		juFontDraw(game->assets.fntOverlay, x + 1, y - 2, "There is no recorded highscore.");
 	}
@@ -511,7 +543,7 @@ TerminalCode pnlUpdateMissionSelectTerminal(PNLRuntime game) {
 			vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
 		}
 
-		if (pnlDrawButton(game, game->assets.sprButtonLaunch, x + game->assets.bgTerminal->img->width - w - 9, y) && pnlPlayerPurchase(game, game->potentialPlanets->doshCost)) {
+		if (pnlDrawButton(game, game->assets.sprButtonLaunch, x + game->assets.bgTerminal->img->width - w - 9, y) && pnlPlayerPurchase(game, game->potentialPlanets[i].doshCost)) {
 			pnlLoadPlanet(game, i);
 			game->fadeOut = true;
 			game->fadeClock = 0;
@@ -594,13 +626,26 @@ TerminalCode pnlUpdateWeaponsTerminal(PNLRuntime game) {
 
 
 /********************** Player and other entities **********************/
+
+// Records the new highscore if this score beats the last one - returns true if new highscore
+bool pnlRecordHighscore(PNLRuntime game) {
+	if (!juSaveKeyExists(game->save, SAVE_HIGHSCORE) || juSaveGetDouble(game->save, SAVE_HIGHSCORE) < game->player.fame) {
+		juSaveSetDouble(game->save, SAVE_HIGHSCORE, game->player.fame);
+		juSaveSetDouble(game->save, SAVE_DOSH, game->player.dosh);
+		juSaveSetDouble(game->save, SAVE_KILLS, game->player.kills);
+		juSaveSetString(game->save, SAVE_DEATH_PLANET, PLANET_NAMES[game->planet.spec.planetNameIndex]);
+		juSaveSetString(game->save, SAVE_DIFFICULTY, DIFFICULTY_NAMES[game->planet.spec.planetDifficulty]);
+		return true;
+	}
+	return false;
+}
+
 // Forward declarations
 void pnlDrawWeapon(PNLRuntime game, PNLWeapon wep, float x, float y, float r, float xscale, float yscale);
 PNLWeapon pnlGenerateWeapon(PNLRuntime game, WeaponType weaponType);
 void pnlCreateBullet(PNLRuntime game, physvec2 pos, real speed, real direction, bool pierce, real damage, VK2DTexture tex);
 
-// Player update - movement and weapons
-void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
+void _pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 	// DEBUG
 	if (juKeyboardGetKeyPressed(SDL_SCANCODE_1))
 		game->player.weapon = pnlGenerateWeapon(game, wt_Shotgun);
@@ -679,6 +724,9 @@ void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 		}
 	}
 
+	// Hit cooldown
+	game->player.hitcooldown -= juDelta();
+
 	// Move
 	physvec2 oldVel = game->player.velocity;
 	game->player.velocity.x += (((real)juKeyboardGetKey(SDL_SCANCODE_D)) - ((real)juKeyboardGetKey(SDL_SCANCODE_A))) * PHYS_ACCELERATION * juDelta();
@@ -706,10 +754,29 @@ void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 	game->player.pos = addPhysVec2(game->player.pos, game->player.velocity);
 
 	// Draw player
-	if (drawPlayer) {
+	if (drawPlayer && !(game->player.hitcooldown > 0 && sin((game->time / VK2D_PI) * 4) > 1)) {
 		lookingDir += VK2D_PI / 2;
 		juSpriteDraw(game->player.sprite, game->player.pos.x, game->player.pos.y);
 		pnlDrawWeapon(game, game->player.weapon, game->player.pos.x, game->player.pos.y - 6, sign(lookingDir) == 1 ? -lookingDir + (VK2D_PI / 2) : -lookingDir + (VK2D_PI / 2) - VK2D_PI, sign(lookingDir), 1);
+		if (game->onSite) {
+			vk2dRendererSetColourMod(VK2D_BLACK);
+			vk2dDrawRectangle(game->player.pos.x - (PLAYER_HEALTHBAR_WIDTH / 2), game->player.pos.y - 14 - PLAYER_HEALTHBAR_HEIGHT, PLAYER_HEALTHBAR_WIDTH, PLAYER_HEALTHBAR_HEIGHT);
+			vk2dRendererSetColourMod(VK2D_RED);
+			vk2dDrawRectangle(game->player.pos.x - (PLAYER_HEALTHBAR_WIDTH / 2) + 1, game->player.pos.y - 13 - PLAYER_HEALTHBAR_HEIGHT, (game->player.hp / PLAYER_MAX_HP) * (PLAYER_HEALTHBAR_WIDTH - 2), PLAYER_HEALTHBAR_HEIGHT - 2);
+			vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+		}
+	}
+}
+
+// Player update - movement and weapons
+void pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
+	if (game->player.hp > 0)
+		_pnlPlayerUpdate(game, drawPlayer);
+	else if (game->deathCooldown) {
+		if (juKeyboardGetKeyPressed(SDL_SCANCODE_SPACE) && !game->fadeOut) {
+			game->fadeOut = true;
+			game->fadeClock = FADE_IN_DURATION;
+		}
 	}
 }
 
@@ -950,8 +1017,9 @@ void pnlDrawTitleBar(PNLRuntime game) {
 	if (game->notificationTime > 0) {
 		vec4 cyan = {0, 1, 1, 1};
 		game->notificationTime -= juDelta();
-		if (game->notificationTime < NOTIFICATION_TIME / 2 && game->notificationTime > 0) {
-			cyan[3] = (game->notificationTime + juDelta()) / (NOTIFICATION_TIME / 2);
+		if (game->notificationTime < NOTIFICATION_TIME / 2) {
+			cyan[3] = (game->notificationTime) / (NOTIFICATION_TIME / 2);
+			cyan[3] = cyan[3] < 0 ? 0 : cyan[3];
 		}
 		vk2dRendererSetColourMod(cyan);
 		juFontDraw(game->assets.fntOverlay, cam.x + 38, cam.y + 18, "%s", game->notificationMessage);
@@ -1001,7 +1069,7 @@ void pnlUpdateMinerals(PNLRuntime game) {
 					game->planet.minerals[i].pos.y -= sin(angle) * MINERAL_MOVE_SPEED * juDelta();
 				}
 
-				if (dist <= MINERAL_PICKUP_RANGE) {
+				if (dist <= MINERAL_PICKUP_RANGE && game->planet.inventory.onHandInventory[game->planet.minerals[i].stockIndex] < MAX_ON_HAND_INVENTORY) {
 					game->planet.minerals[i].active = false;
 					game->planet.inventory.onHandInventory[game->planet.minerals[i].stockIndex] += MIN_MINERAL_PICKUP + round((real)(MAX_MINERAL_PICKUP - MIN_MINERAL_PICKUP) * randr());
 					pnlSetNotification(game, "Grabbed minerals");
@@ -1023,9 +1091,9 @@ void pnlCreateEnemy(PNLRuntime game) {
 		enemy->colour[1] = randr();
 		enemy->colour[2] = randr();
 		enemy->colour[3] = 1;
-		enemy->dosh = ENEMY_MIN_DOSH + ((ENEMY_MAX_DOSH - ENEMY_MIN_DOSH) * randr());
-		enemy->fame = ENEMY_MIN_FAME + ((ENEMY_MAX_FAME - ENEMY_MIN_FAME) * randr());
-		enemy->hp = ENEMY_HP + (ENEMY_HP * sign(randr() - 0.5) * ENEMY_HP_VARIANCE);
+		enemy->dosh = (pow(ENEMY_DOSH_MULTIPLIER, game->planet.spec.planetDifficulty) * ENEMY_MIN_DOSH) + (((pow(ENEMY_DOSH_MULTIPLIER, game->planet.spec.planetDifficulty) * ENEMY_MAX_DOSH) - (pow(ENEMY_DOSH_MULTIPLIER, game->planet.spec.planetDifficulty) * ENEMY_MIN_DOSH)) * randr());
+		enemy->fame = (pow(ENEMY_FAME_MULTIPLIER, game->planet.spec.planetDifficulty) * ENEMY_MIN_FAME) + (((pow(ENEMY_FAME_MULTIPLIER, game->planet.spec.planetDifficulty) * ENEMY_MAX_FAME) - (pow(ENEMY_FAME_MULTIPLIER, game->planet.spec.planetDifficulty) * ENEMY_MIN_FAME)) * randr());
+		enemy->hp = (pow(ENEMY_HP_MULTIPLIER, game->planet.spec.planetDifficulty) * ENEMY_HP) + ((pow(ENEMY_HP_MULTIPLIER, game->planet.spec.planetDifficulty) * ENEMY_HP) * sign(randr() - 0.5) * ENEMY_HP_VARIANCE);
 		float angle = randr() * VK2D_PI * 2;
 		float distance = MIN_ENEMY_SPAWN_DISTANCE + ((MAX_ENEMY_SPAWN_DISTANCE - MIN_ENEMY_SPAWN_DISTANCE) * randr());
 		enemy->x = cos(angle) * distance;
@@ -1053,10 +1121,19 @@ void pnlUpdateEnemies(PNLRuntime game) {
 				game->player.kills += 1;
 			} else {
 				float angle = juPointAngle(game->planet.enemies[i].x, game->planet.enemies[i].y, game->player.pos.x, game->player.pos.y) - (VK2D_PI / 2);
-				game->planet.enemies[i].x += cos(angle) * ENEMY_SPEED * juDelta();
-				game->planet.enemies[i].y -= sin(angle) * ENEMY_SPEED * juDelta();
+				game->planet.enemies[i].x += cos(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) * juDelta();
+				game->planet.enemies[i].y -= sin(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) * juDelta();
 
-				// TODO: Damage player
+				if (juPointDistance(game->planet.enemies[i].x, game->planet.enemies[i].y, game->player.pos.x, game->player.pos.y) < ENEMY_HIT_DISTANCE && game->player.hitcooldown <= 0) {
+					real mult = pow(ENEMY_DAMAGE_MULTIPLIER, (real)game->planet.spec.planetDifficulty);
+					game->player.hp -= (ENEMY_DAMAGE * mult) + (sign(randr() - 0.5) * ENEMY_DAMAGE_VARIANCE * ENEMY_DAMAGE * randr());
+					game->player.hitcooldown = ENEMY_HIT_DELAY;
+
+					if (game->player.hp <= 0) {
+						game->highscore = pnlRecordHighscore(game);
+						game->deathCooldown = true;
+					}
+				}
 
 				vk2dRendererSetColourMod(game->planet.enemies[i].colour);
 				juSpriteDraw(game->assets.sprEnemy, game->planet.enemies[i].x, game->planet.enemies[i].y);
@@ -1078,6 +1155,7 @@ void pnlInitHome(PNLRuntime game) {
 	game->player.hp = PLAYER_MAX_HP;
 	game->player.pos.x = 0;
 	game->player.pos.y = 0;
+	game->highscore = false;
 }
 
 WorldSelection pnlUpdateHome(PNLRuntime game) {
@@ -1138,7 +1216,7 @@ void pnlInitPlanet(PNLRuntime game) {
 	// Reset enemy stuff
 	game->planet.enemySpawnDelayPrevious = ENEMY_SPAWN_DELAY;
 	game->planet.enemySpawnDelay = ENEMY_SPAWN_DELAY;
-	memset(&game->planet.enemies, 0, sizeof(struct PNLEnemy) * MAX_ENEMIES);
+	memset(game->planet.enemies, 0, sizeof(struct PNLEnemy) * MAX_ENEMIES);
 }
 
 WorldSelection pnlUpdatePlanet(PNLRuntime game) {
@@ -1163,6 +1241,16 @@ WorldSelection pnlUpdatePlanet(PNLRuntime game) {
 	pnlDrawTitleBar(game);
 	pnlDrawMineralOverlay(game);
 
+	// Draw death overlay
+	if (game->deathCooldown) {
+		VK2DCamera cam = vk2dRendererGetCamera();
+		// Coordinates to start drawing the background - the +3 is to account for the background's frame
+		float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
+		float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
+		vk2dDrawTexture((game->highscore ? game->assets.texHighscoreScreen : game->assets.texDeathScreen), x - 3, y - 3);
+
+	}
+
 	// DEBUG
 	if (juKeyboardGetKey(SDL_SCANCODE_BACKSPACE)) {
 		game->fadeOut = true;
@@ -1176,6 +1264,14 @@ WorldSelection pnlUpdatePlanet(PNLRuntime game) {
 		game->fadeClock += juDelta();
 	} else if (game->fadeOut) {
 		if (game->fadeClock >= FADE_IN_DURATION) {
+			// if the player died we need to reset the player
+			if (game->deathCooldown) {
+				memcpy(&game->player, &PLAYER_DEFAULT_STATE, sizeof(struct PNLPlayer));
+				game->player.weapon = pnlGenerateWeapon(game, wt_Pistol);
+				for (int i = 0; i < STOCK_TRADE_COUNT; i++)
+					game->market.stockOwned[i] = 0;
+			}
+
 			game->fadeOut = false;
 			return ws_Home;
 		}
@@ -1232,6 +1328,8 @@ void pnlInit(PNLRuntime game) {
 	game->assets.texBullet = juLoaderGetTexture(game->loader, "assets/bullet.png");
 	game->assets.texWhoosh = juLoaderGetTexture(game->loader, "assets/whoosh.png");
 	game->assets.texCompass = juLoaderGetTexture(game->loader, "assets/compass.png");
+	game->assets.texDeathScreen = juLoaderGetTexture(game->loader, "assets/death.png");
+	game->assets.texHighscoreScreen = juLoaderGetTexture(game->loader, "assets/deathhighscore.png");
 	game->assets.sprEnemy = juLoaderGetSprite(game->loader, "assets/enemy.png");
 
 	// Build home grid
@@ -1409,7 +1507,7 @@ int main() {
 	vk2dRendererWait();
 	pnlQuit(game);
 	juLoaderFree(game->loader);
-	//juSaveFree(game->save); uh oh memory leak
+	// juSaveFree(game->save); // uh oh memory leak?
 	free(game);
 	vk2dTextureFree(backbuffer);
 
