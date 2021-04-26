@@ -92,12 +92,12 @@ const real ENEMY_DOSH_MULTIPLIER = 2;
 const real ENEMY_HP_MULTIPLIER = 1.3;
 const real ENEMY_HIT_DELAY = 1;
 const real ENEMY_HIT_DISTANCE = 15; // distance from the player that counts as a "hit"
-const real ENEMY_SPAWN_DELAY = 3; // delay in seconds between enemy spawns
+const real ENEMY_SPAWN_DELAY = 5; // delay in seconds between enemy spawns
 const real ENEMY_SPAWN_DELAY_DECREASE = 0.05; // how much shorter the spawn delay gets each time an enemy spawn
 const real PLAYER_MAX_HP = 100;
 const real WEAPON_SWORD_DAMAGE_MULTIPLIER = 2; // Swords are risky so huge damage boost
-const real WEAPON_SHOTGUN_DAMAGE_MULTIPLIER = 0.5; // Shotguns have lots of pellets so low damage
-const real WEAPON_ASSAULTRIFLE_DAMAGE_MULTIPLIER = 0.4; // Assault rifles are fast and long-range so low damage
+const real WEAPON_SHOTGUN_DAMAGE_MULTIPLIER = 0.9; // Shotguns have lots of pellets so low damage
+const real WEAPON_ASSAULTRIFLE_DAMAGE_MULTIPLIER = 0.6; // Assault rifles are fast and long-range so low damage
 const real WEAPON_SNIPER_DAMAGE_MULTIPLIER = 3; // Sniper shoots slow but pierces so high damage
 const real WEAPON_PISTOL_DAMAGE_MULTIPLIER = 1; // Starting weapon
 const real WEAPON_SWORD_RECOIL = 0; // Velocity applied in the opposite direction when firing a given weapon
@@ -146,6 +146,8 @@ const float VOLUME_MUSIC_RIGHT = 1;
 const float VOLUME_EFFECT_LEFT = 0.5;
 const float VOLUME_EFFECT_RIGHT = 0.5;
 #define MAX_SHOP_LINES ((int)3)
+const real FAME_TO_DOSH_FAME_RATE = 50;
+const real FAME_TO_DOSH_DOSH_RATE = 500;
 
 const real STOCK_BASE_PRICE = 5; // Base price of all stocks, they will fluctuate from this
 const char *STOCK_NAMES[] = { // Names of the materials you gather
@@ -234,6 +236,8 @@ JULoadedAsset ASSETS[] = {
 		{"assets/shipbutton.png", 0, 0, 75, 75, 0, 3, 0, 0},
 		{"assets/purchase.png", 0, 0, 80, 20, 0, 3, 0, 0},
 		{"assets/enemy.png", 0, 0, 16, 24, 0.25, 4, 8, 12},
+		{"assets/retire.png", 0, 0, 80, 30, 0, 3},
+		{"assets/fametodosh.png", 0, 0, 80, 30, 0, 3},
 		{"assets/home.png"},
 		{"assets/overlay.jufnt"},
 		{"assets/helpterm.png"},
@@ -412,6 +416,8 @@ typedef struct PNLAssets {
 	JUSprite sprButtonSell10;
 	JUSprite sprButtonShip;
 	JUSprite sprButtonPurchase;
+	JUSprite sprButtonRetire;
+	JUSprite sprButtonFameToDosh;
 	VK2DTexture texAssaultRifle;
 	VK2DTexture bgOnsite;
 	VK2DTexture texPistol;
@@ -591,6 +597,7 @@ void pnlDrawWeaponStats(PNLRuntime game, PNLWeapon weapon, float x, float y) {
 	}
 }
 
+PNLWeapon pnlGenerateWeapon(PNLRuntime, WeaponType);
 TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
 	VK2DCamera cam = vk2dRendererGetCamera();
 	// Coordinates to start drawing the background - the +3 is to account for the background's frame
@@ -607,6 +614,21 @@ TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
 		juFontDraw(game->assets.fntOverlay, x + 1, y - 2, "\n\nHigh score: %.0f fame, $%.0f dosh\nFreedom delivered to: %i aliens\nDied on planet %s\nDistance: %s", hs, dosh, kills, planet, difficulty);
 	} else {
 		juFontDraw(game->assets.fntOverlay, x + 1, y - 2, "There is no recorded highscore.");
+	}
+	juFontDraw(game->assets.fntOverlay, x + 3, y + 300 - 75, "Retire if you're out of money or convert %.0f fame to $%.2f dosh", FAME_TO_DOSH_FAME_RATE, FAME_TO_DOSH_DOSH_RATE);
+	if (pnlDrawButton(game, game->assets.sprButtonRetire, x + 250 - 40 - 45, y + 300 - 43)) {
+		pnlSetNotification(game, "Restarted game");
+		JUSprite spr = game->player.sprite;
+		memcpy(&game->player, &PLAYER_DEFAULT_STATE, sizeof(struct PNLPlayer));
+		game->player.sprite = spr;
+		game->player.weapon = pnlGenerateWeapon(game, wt_Pistol);
+		for (int i = 0; i < STOCK_TRADE_COUNT; i++)
+			game->market.stockOwned[i] = 0;
+	}
+	if (pnlDrawButton(game, game->assets.sprButtonFameToDosh, x + 250 - 40 + 45, y + 300 - 43) && game->player.fame >= FAME_TO_DOSH_FAME_RATE) {
+		game->player.fame -= FAME_TO_DOSH_FAME_RATE;
+		game->player.dosh += FAME_TO_DOSH_DOSH_RATE;
+		pnlSetNotification(game, "Politicans swayed");
 	}
 
 	return tc_NoDraw;
@@ -1248,10 +1270,10 @@ void pnlUpdateEnemies(PNLRuntime game) {
 				} else {
 					game->planet.enemies[i].x +=
 							cos(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) *
-							juDelta() * 2;
+							juDelta() * 4;
 					game->planet.enemies[i].y -=
 							sin(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) *
-							juDelta() * 2;
+							juDelta() * 4;
 				}
 
 				if (distance < ENEMY_HIT_DISTANCE && game->player.hitcooldown <= 0 && !game->fadeOut) {
@@ -1466,6 +1488,8 @@ void pnlInit(PNLRuntime game) {
 	game->assets.sprButtonSell10 = juLoaderGetSprite(game->loader, "assets/sell10button.png");
 	game->assets.sprButtonShip = juLoaderGetSprite(game->loader, "assets/shipbutton.png");
 	game->assets.sprStars = juLoaderGetSprite(game->loader, "assets/stars.png");
+	game->assets.sprButtonRetire = juLoaderGetSprite(game->loader, "assets/retire.png");
+	game->assets.sprButtonFameToDosh = juLoaderGetSprite(game->loader, "assets/fametodosh.png");
 	game->assets.texAssaultRifle = juLoaderGetTexture(game->loader, "assets/assaultrifle.png");
 	game->assets.bgOnsite = juLoaderGetTexture(game->loader, "assets/onsite.png");
 	game->assets.texPistol = juLoaderGetTexture(game->loader, "assets/pistol.png");
