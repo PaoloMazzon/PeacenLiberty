@@ -75,6 +75,12 @@ const real WEAPON_MIN_DAMAGE = 20; // Minimum/maximum possible weapon damage (ro
 const real WEAPON_MAX_DAMAGE = 50;
 const real ENEMY_HP = 100; // Base enemy hp
 const real ENEMY_HP_VARIANCE = 0.3; // Enemy hp can be +/- this percent hp
+const real ENEMY_MAX_FAME = 3;
+const real ENEMY_MIN_FAME = 1;
+const real ENEMY_MAX_DOSH = 5;
+const real ENEMY_MIN_DOSH = 2;
+const real ENEMY_SPAWN_DELAY = 3; // delay in seconds between enemy spawns
+const real ENEMY_SPAWN_DELAY_DECREASE = 0.1; // how much shorter the spawn delay gets each time an enemy spawn
 const real PLAYER_MAX_HP = 100;
 const real WEAPON_SWORD_DAMAGE_MULTIPLIER = 2; // Swords are risky so huge damage boost
 const real WEAPON_SHOTGUN_DAMAGE_MULTIPLIER = 0.5; // Shotguns have lots of pellets so low damage
@@ -293,6 +299,10 @@ typedef struct PNLEnemy {
 	real x, y;
 	real dosh;
 	real fame;
+	real hp;
+	real attackDelay;
+	vec4 colour;
+	bool active;
 } PNLEnemy;
 
 // Information of a planet the sprite might go to
@@ -328,6 +338,8 @@ typedef struct PNLPlanet {
 	PNLPlanetSpecs spec; // Spec this planet comes from
 	PNLMineral minerals[MAX_MINERALS];
 	PNLEnemy enemies[MAX_ENEMIES];
+	real enemySpawnDelay;
+	real enemySpawnDelayPrevious;
 	PNLInventory inventory;
 } PNLPlanet;
 
@@ -986,6 +998,26 @@ void pnlUpdateMinerals(PNLRuntime game) {
 	}
 }
 
+void pnlCreateEnemy(PNLRuntime game) {
+
+}
+
+void pnlUpdateEnemies(PNLRuntime game) {
+	if (game->planet.enemySpawnDelay > 0) {
+		game->planet.enemySpawnDelay -= juDelta();
+		if (game->planet.enemySpawnDelay <= 0) {
+			game->planet.enemySpawnDelay = game->planet.enemySpawnDelayPrevious * (1 - ENEMY_SPAWN_DELAY_DECREASE);
+			game->planet.enemySpawnDelayPrevious = game->planet.enemySpawnDelay;
+			pnlCreateEnemy(game);
+		}
+	}
+
+	// Move enemies towards player and draw
+	for (int i = 0; i < MAX_ENEMIES; i++) {
+
+	}
+}
+
 /********************** Functions specific to regions **********************/
 void pnlInitHome(PNLRuntime game) {
 	for (int i = 0; i < GENERATED_PLANET_COUNT; i++)
@@ -1054,6 +1086,11 @@ void pnlInitPlanet(PNLRuntime game) {
 		game->planet.minerals[i].stockIndex = (int)floor(randr() * STOCK_TRADE_COUNT);
 		game->planet.minerals[i].randomSeed = randr() * 10000;
 	}
+
+	// Reset enemy stuff
+	game->planet.enemySpawnDelayPrevious = ENEMY_SPAWN_DELAY;
+	game->planet.enemySpawnDelay = ENEMY_SPAWN_DELAY;
+	memset(&game->planet.enemies, 0, sizeof(struct PNLEnemy) * MAX_ENEMIES);
 }
 
 WorldSelection pnlUpdatePlanet(PNLRuntime game) {
@@ -1069,6 +1106,7 @@ WorldSelection pnlUpdatePlanet(PNLRuntime game) {
 	pnlUpdateMinerals(game);
 	pnlPlayerUpdate(game, true);
 	pnlUpdateBullets(game);
+	pnlUpdateEnemies(game);
 	if (juPointDistance(game->player.pos.x, game->player.pos.y, 39, 39) < MINERAL_DEPOSIT_RANGE) {
 		pnlLoadMineralsIntoShip(game);
 	}
@@ -1240,7 +1278,7 @@ int main() {
 	SDL_Window *window = SDL_CreateWindow(GAME_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, GAME_WIDTH * WINDOW_SCALE, GAME_HEIGHT * WINDOW_SCALE, SDL_WINDOW_VULKAN);
 	VK2DRendererConfig config = {
 			msaa_16x,
-			sm_TripleBuffer,
+			sm_VSync,
 			ft_Nearest,
 	};
 	vk2dRendererInit(window, config);
