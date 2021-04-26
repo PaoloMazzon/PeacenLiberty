@@ -59,18 +59,18 @@ const real PHYS_FRICTION = 30; // Only applies while the player is not giving a 
 const real PHYS_ACCELERATION = 18;
 const float PHYS_CAMERA_FRICTION = 8;
 const real WORLD_GRID_WIDTH = 50; // These are really only for the homeworld and honestly dont matter that much
-const real WORLD_GRID_HEIGHT = 90;
+const real WORLD_GRID_HEIGHT = 70;
 const real FAME_PER_PLANET = 30; // Base fame per planet for 1 star difficulty
 const real FAME_VARIANCE = 10; // Fame for a planet can fluctuate by +/- up to this amount
 const real FAME_MULTIPLIER = 1.6; // Multiplier per difficulty level
-const real FAME_2_STAR_CUTOFF = 20; // Required fame to get these missions
-const real FAME_3_STAR_CUTOFF = 100;
-const real FAME_4_STAR_CUTOFF = 300;
+const real FAME_2_STAR_CUTOFF = 50; // Required fame to get these missions
+const real FAME_3_STAR_CUTOFF = 200;
+const real FAME_4_STAR_CUTOFF = 500;
 const real FAME_LOWER_STAR_CHANCE = 0.3; // Chance of mission being a star below current level
 const real DOSH_PLANET_COST = 200; // Cost of departing to a planet
-const real DOSH_MULTIPLIER = 1.7; // Cost multiplier per difficulty level
+const real DOSH_MULTIPLIER = 1.3; // Cost multiplier per difficulty level
 const real DOSH_PLANET_COST_VARIANCE = 50; // How much the cost can vary (also multiplied by cost multiplier)
-const real IN_RANGE_TERMINAL_DISTANCE = 30; // Distance away from a terminal considered to be "in-range"
+const real IN_RANGE_TERMINAL_DISTANCE = 40; // Distance away from a terminal considered to be "in-range"
 #define GENERATED_PLANET_COUNT ((int)5) // Number of planets the player can choose from
 const int WEAPON_MIN_SPREAD = 3; // Minimum/maximum pellets per shotgun blast
 const int WEAPON_MAX_SPREAD = 12;
@@ -140,6 +140,11 @@ const real MINERAL_DEPOSIT_RANGE = 100;
 const real NOTIFICATION_TIME = 2; // time in seconds notifications remain on screen (they fade out for half of this)
 const real PLAYER_HEALTHBAR_WIDTH = 40;
 const real PLAYER_HEALTHBAR_HEIGHT = 8;
+#define MAX_WEAPONS_AT_RINKYS ((int)3) // how many weapons rinky sells at once
+const float VOLUME_MUSIC_LEFT = 1;
+const float VOLUME_MUSIC_RIGHT = 1;
+const float VOLUME_EFFECT_LEFT = 0.5;
+const float VOLUME_EFFECT_RIGHT = 0.5;
 
 const real STOCK_BASE_PRICE = 5; // Base price of all stocks, they will fluctuate from this
 const char *STOCK_NAMES[] = { // Names of the materials you gather
@@ -189,10 +194,10 @@ const int WEAPON_NAME_SECOND_COUNT = sizeof(WEAPON_NAME_SECOND) / sizeof(const c
 
 const HomeBlocks HOME_WORLD_GRID[] = {
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
-		hb_None, hb_MissionSelect, hb_None, hb_Stocks, hb_None, hb_Weapons, hb_None, hb_None,
+		hb_MissionSelect, hb_None, hb_None, hb_Stocks, hb_None, hb_None, hb_None, hb_Weapons,
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
-		hb_None, hb_Help, hb_None, hb_Memorial, hb_None, hb_None, hb_None, hb_None,
+		hb_Help, hb_None, hb_None, hb_Memorial, hb_None, hb_None, hb_None, hb_None,
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
 		hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None, hb_None,
@@ -226,6 +231,7 @@ JULoadedAsset ASSETS[] = {
 		{"assets/buy10button.png", 0, 0, 58, 29, 0, 3},
 		{"assets/sell10button.png", 0, 0, 58, 29, 0, 3},
 		{"assets/shipbutton.png", 0, 0, 75, 75, 0, 3, 0, 0},
+		{"assets/purchase.png", 0, 0, 80, 20, 0, 3, 0, 0},
 		{"assets/enemy.png", 0, 0, 16, 24, 0.25, 4, 8, 12},
 		{"assets/home.png"},
 		{"assets/overlay.jufnt"},
@@ -258,7 +264,12 @@ JULoadedAsset ASSETS[] = {
 		{"assets/whoosh.png"},
 		{"assets/compass.png"},
 		{"assets/death.png"},
+		{"assets/tutorial1.png"},
+		{"assets/tutorial2.png"},
 		{"assets/deathhighscore.png"},
+		{"assets/goofytrack.wav"},
+		{"assets/sombertrack.wav"},
+		{"assets/newgun.wav"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 #define PLANET_TEXTURE_COUNT ((int)5)
@@ -390,6 +401,7 @@ typedef struct PNLAssets {
 	JUSprite sprButtonBuy10;
 	JUSprite sprButtonSell10;
 	JUSprite sprButtonShip;
+	JUSprite sprButtonPurchase;
 	VK2DTexture texAssaultRifle;
 	VK2DTexture bgOnsite;
 	VK2DTexture texPistol;
@@ -401,14 +413,20 @@ typedef struct PNLAssets {
 	VK2DTexture texCompass;
 	VK2DTexture texDeathScreen;
 	VK2DTexture texHighscoreScreen;
+	VK2DTexture texTutorial1;
+	VK2DTexture texTutorial2;
 	JUSprite sprEnemy;
 	JUFont fntOverlay;
+	JUSound sndMusicSomber;
+	JUSound sndMusicGoofy;
+	JUSound sndNewGun;
 } PNLAssets;
 
 typedef struct PNLRuntime {
 	PNLPlayer player;
 	PNLStockMarket market;
 	JUSave save;
+	int tutorialPage;
 
 	// Current planet, only matters if out on an expedition
 	PNLPlanet planet;
@@ -425,6 +443,9 @@ typedef struct PNLRuntime {
 	real fadeClock; // Counts up to FADE_IN_DURATION
 	bool deathCooldown;
 	bool highscore;
+
+	// Weapon store
+	PNLWeapon shop[MAX_WEAPONS_AT_RINKYS];
 
 	// For notifications
 	real notificationTime;
@@ -505,6 +526,52 @@ bool pnlDrawButton(PNLRuntime game, JUSprite button, real x, real y) {
 	return mouseOver && game->mouseLReleased;
 }
 
+void pnlDrawHealthbar(PNLRuntime game, real percent, vec4 colour, float x, float y, float w, float h) {
+	vk2dRendererSetColourMod(VK2D_WHITE);
+	vk2dDrawRectangle(x, y, w, h);
+	vk2dRendererSetColourMod(colour);
+	vk2dDrawRectangle(x + 1, y + 1, (w - 2) * percent, h - 2);
+	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+}
+
+void pnlDrawWeaponStats(PNLRuntime game, PNLWeapon weapon, float x, float y) {
+	juFontDraw(game->assets.fntOverlay, x + 3, y, "%s %s", WEAPON_NAME_FIRST[weapon.weaponNameFirstIndex], WEAPON_NAME_SECOND[weapon.weaponNameSecondIndex]);
+	juFontDraw(game->assets.fntOverlay, x + 5, y + 20, "$%.2f", weapon.weaponCost);
+	y += 20;
+	x += 20;
+	vk2dRendererSetColourMod(weapon.weaponColourMod);
+	if (weapon.weaponType == wt_AssaultRifle) {
+		vk2dDrawTextureExt(game->assets.texAssaultRifle, x - 20, y + 30, 3, 3, 0, 0, 0);
+		vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+		juFontDraw(game->assets.fntOverlay, x + 10, y + 60, "Damage");
+		pnlDrawHealthbar(game, ((weapon.weaponDamage / WEAPON_ASSAULTRIFLE_DAMAGE_MULTIPLIER) - WEAPON_MIN_DAMAGE) / (WEAPON_MAX_DAMAGE - WEAPON_MIN_DAMAGE), VK2D_RED, x + 10, y + 90, 80, 10);
+		juFontDraw(game->assets.fntOverlay, x + 10, y + 105, "RPM");
+		pnlDrawHealthbar(game, (weapon.weaponBPS - WEAPON_MIN_BPS) / (WEAPON_MAX_BPS - WEAPON_MIN_BPS), VK2D_GREEN, x + 10, y + 135, 80, 10);
+	} else if (weapon.weaponType == wt_Sniper) {
+		vk2dDrawTextureExt(game->assets.texSniper, x - 20, y + 30, 3, 3, 0, 0, 0);
+		vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+		juFontDraw(game->assets.fntOverlay, x + 10, y + 60, "Damage");
+		pnlDrawHealthbar(game, ((weapon.weaponDamage / WEAPON_SNIPER_DAMAGE_MULTIPLIER) - WEAPON_MIN_DAMAGE) / (WEAPON_MAX_DAMAGE - WEAPON_MIN_DAMAGE), VK2D_RED, x + 10, y + 90, 80, 10);
+	} else if (weapon.weaponType == wt_Shotgun) {
+		vk2dDrawTextureExt(game->assets.texShotgun, x - 20, y + 30, 3, 3, 0, 0, 0);
+		vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+		juFontDraw(game->assets.fntOverlay, x + 10, y + 60, "Damage");
+		pnlDrawHealthbar(game, ((weapon.weaponDamage / WEAPON_SHOTGUN_DAMAGE_MULTIPLIER) - WEAPON_MIN_DAMAGE) / (WEAPON_MAX_DAMAGE - WEAPON_MIN_DAMAGE), VK2D_RED, x + 10, y + 90, 80, 10);
+		juFontDraw(game->assets.fntOverlay, x + 10, y + 105, "Spread");
+		pnlDrawHealthbar(game, (weapon.weaponPellets - WEAPON_MIN_SPREAD) / (WEAPON_MAX_SPREAD - WEAPON_MIN_SPREAD), VK2D_BLUE, x + 10, y + 135, 80, 10);
+	} else if (weapon.weaponType == wt_Sword) {
+		vk2dDrawTextureExt(game->assets.texSword, x - 20, y + 30, 3, 3, 0, 0, 0);
+		vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+		juFontDraw(game->assets.fntOverlay, x + 10, y + 60, "Damage");
+		pnlDrawHealthbar(game, ((weapon.weaponDamage / WEAPON_SWORD_DAMAGE_MULTIPLIER) - WEAPON_MIN_DAMAGE) / (WEAPON_MAX_DAMAGE - WEAPON_MIN_DAMAGE), VK2D_RED, x + 10, y + 90, 80, 10);
+	} else if (weapon.weaponType == wt_Pistol) {
+		vk2dDrawTextureExt(game->assets.texPistol, x - 20, y + 30, 3, 3, 0, 0, 0);
+		vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+		juFontDraw(game->assets.fntOverlay, x + 10, y + 60, "Damage");
+		pnlDrawHealthbar(game, ((weapon.weaponDamage / WEAPON_PISTOL_DAMAGE_MULTIPLIER) - WEAPON_MIN_DAMAGE) / (WEAPON_MAX_DAMAGE - WEAPON_MIN_DAMAGE), VK2D_RED, x + 10, y + 90, 80, 10);
+	}
+}
+
 TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
 	VK2DCamera cam = vk2dRendererGetCamera();
 	// Coordinates to start drawing the background - the +3 is to account for the background's frame
@@ -567,8 +634,15 @@ TerminalCode pnlUpdateHelpTerminal(PNLRuntime game) {
 	// Coordinates to start drawing the background - the +3 is to account for the background's frame
 	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
 	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
-	vk2dDrawTexture(game->assets.bgTerminal, x - 3, y - 3);
-	juFontDrawWrapped(game->assets.fntOverlay, x + 1, y + 1, game->assets.bgTerminal->img->width - 7, "Peace & Liberty\n\n\nYour goal is to become as famous as possible by spreading \"peace\"\nand \"democracy\" and \"liberty\" by going to alien planets and \ncollecting materials. Once you have those materials, you will come\nback home and sell it on the open market. Beware! You've gotta pay rent and taxes upon your return so you best be careful with your\nspending!");
+
+	if (game->tutorialPage % 2 == 0)
+		vk2dDrawTexture(game->assets.texTutorial1, x - 4, y - 4);
+	else
+		vk2dDrawTexture(game->assets.texTutorial2, x - 4, y - 4);
+
+	if (pnlDrawButton(game, game->assets.sprButtonYes, x + 500 - 60, y + 300 - 60))
+		game->tutorialPage++;
+
 	return tc_NoDraw;
 }
 
@@ -622,13 +696,24 @@ TerminalCode pnlUpdateStocksTerminal(PNLRuntime game) {
 	return tc_NoDraw;
 }
 
+PNLWeapon pnlGenerateWeapon(PNLRuntime game, WeaponType weaponType);
 TerminalCode pnlUpdateWeaponsTerminal(PNLRuntime game) {
 	VK2DCamera cam = vk2dRendererGetCamera();
 	// Coordinates to start drawing the background - the +3 is to account for the background's frame
 	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
 	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
 	vk2dDrawTexture(game->assets.bgTerminal, x - 3, y - 3);
-	// TODO: Weapons
+
+	for (int i = 0; i < MAX_WEAPONS_AT_RINKYS; i++) {
+		pnlDrawWeaponStats(game, game->shop[i], x + 1, y + 1);
+		if (pnlDrawButton(game, game->assets.sprButtonPurchase, x + 44, y + 250) && pnlPlayerPurchase(game, game->shop[i].weaponCost)) {
+			game->player.weapon = game->shop[i];
+			game->shop[i] = pnlGenerateWeapon(game, wt_Any);
+			juSoundPlay(game->assets.sndNewGun, false, VOLUME_EFFECT_LEFT, VOLUME_EFFECT_RIGHT);
+		}
+		x += 500 / MAX_WEAPONS_AT_RINKYS;
+	}
+
 	return tc_NoDraw;
 }
 
@@ -654,18 +739,6 @@ PNLWeapon pnlGenerateWeapon(PNLRuntime game, WeaponType weaponType);
 void pnlCreateBullet(PNLRuntime game, physvec2 pos, real speed, real direction, bool pierce, real damage, VK2DTexture tex);
 
 void _pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
-	// DEBUG
-	if (juKeyboardGetKeyPressed(SDL_SCANCODE_1))
-		game->player.weapon = pnlGenerateWeapon(game, wt_Shotgun);
-	else if (juKeyboardGetKeyPressed(SDL_SCANCODE_2))
-		game->player.weapon = pnlGenerateWeapon(game, wt_Sniper);
-	else if (juKeyboardGetKeyPressed(SDL_SCANCODE_3))
-		game->player.weapon = pnlGenerateWeapon(game, wt_Sword);
-	else if (juKeyboardGetKeyPressed(SDL_SCANCODE_4))
-		game->player.weapon = pnlGenerateWeapon(game, wt_AssaultRifle);
-	else if (juKeyboardGetKeyPressed(SDL_SCANCODE_5))
-		game->player.weapon = pnlGenerateWeapon(game, wt_Pistol);
-
 	// Handle weapons
 	float lookingDir = juPointAngle(game->player.pos.x, game->player.pos.y, game->mouseX, game->mouseY) - (VK2D_PI / 2);
 
@@ -875,31 +948,31 @@ TerminalCode pnlUpdateBlock(PNLRuntime game, int index) { // returns true if the
 
 	if (block->type == hb_Memorial) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
-			vk2dDrawTexture(game->assets.texMemorialTerminal, block->x, block->y);
+			vk2dDrawTexture(game->assets.texMemorialTerminal, block->x - (game->assets.texMemorialTerminal->img->width / 2), block->y - (game->assets.texMemorialTerminal->img->height / 2));
 		} else if (!game->fadeIn && !game->fadeOut) { // only do terminal things when not fading
 			code = pnlUpdateMemorialTerminal(game);
 		}
 	} else if (block->type == hb_MissionSelect) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
-			vk2dDrawTexture(game->assets.texMissionTerminal, block->x, block->y);
+			vk2dDrawTexture(game->assets.texMissionTerminal, block->x - (game->assets.texMissionTerminal->img->width / 2), block->y - (game->assets.texMissionTerminal->img->height / 2));
 		} else if (!game->fadeIn && !game->fadeOut) { // only do terminal things when not fading
 			code = pnlUpdateMissionSelectTerminal(game);
 		}
 	} else if (block->type == hb_Help) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
-			vk2dDrawTexture(game->assets.texHelpTerminal, block->x, block->y);
+			vk2dDrawTexture(game->assets.texHelpTerminal, block->x - (game->assets.texHelpTerminal->img->width / 2), block->y - (game->assets.texHelpTerminal->img->height / 2));
 		} else if (!game->fadeIn && !game->fadeOut) { // only do terminal things when not fading
 			code = pnlUpdateHelpTerminal(game);
 		}
 	} else if (block->type == hb_Stocks) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
-			vk2dDrawTexture(game->assets.texStockTerminal, block->x, block->y);
+			vk2dDrawTexture(game->assets.texStockTerminal, block->x - (game->assets.texStockTerminal->img->width / 2), block->y - (game->assets.texStockTerminal->img->height / 2));
 		} else if (!game->fadeIn && !game->fadeOut) { // only do terminal things when not fading
 			code = pnlUpdateStocksTerminal(game);
 		}
 	} else if (block->type == hb_Weapons) {
 		if (juPointDistance(game->player.pos.x, game->player.pos.y, block->x, block->y) > IN_RANGE_TERMINAL_DISTANCE) {
-			vk2dDrawTexture(game->assets.texWeaponTerminal, block->x, block->y);
+			vk2dDrawTexture(game->assets.texWeaponTerminal, block->x - (game->assets.texWeaponTerminal->img->width / 2), block->y - (game->assets.texWeaponTerminal->img->height / 2));
 		} else if (!game->fadeIn && !game->fadeOut) { // only do terminal things when not fading
 			code = pnlUpdateWeaponsTerminal(game);
 		}
@@ -1149,7 +1222,7 @@ void pnlUpdateEnemies(PNLRuntime game) {
 							juDelta() * 2;
 				}
 
-				if (distance < ENEMY_HIT_DISTANCE && game->player.hitcooldown <= 0) {
+				if (distance < ENEMY_HIT_DISTANCE && game->player.hitcooldown <= 0 && game->fadeClock <= 0) {
 					real mult = pow(ENEMY_DAMAGE_MULTIPLIER, (real)game->planet.spec.planetDifficulty);
 					game->player.hp -= (ENEMY_DAMAGE * mult) + (sign(randr() - 0.5) * ENEMY_DAMAGE_VARIANCE * ENEMY_DAMAGE * randr());
 					game->player.hitcooldown = ENEMY_HIT_DELAY;
@@ -1178,9 +1251,19 @@ void pnlInitHome(PNLRuntime game) {
 		game->market.stockCosts[i] = STOCK_BASE_PRICE * (1 + (mult * (STOCK_FLUCTUATION[i] * randr())));
 	}
 	game->player.hp = PLAYER_MAX_HP;
-	game->player.pos.x = 0;
-	game->player.pos.y = 0;
+	game->player.pos.x = PLAYER_DEFAULT_STATE.pos.x;
+	game->player.pos.y = PLAYER_DEFAULT_STATE.pos.y;
 	game->highscore = false;
+
+	for (int i = 0; i < MAX_WEAPONS_AT_RINKYS; i++)
+		game->shop[i] = pnlGenerateWeapon(game, wt_Any);
+
+	// Music
+	juSoundStopAll();
+	if (weightedChance(0.5))
+		juSoundPlay(game->assets.sndMusicGoofy, false, VOLUME_MUSIC_LEFT, VOLUME_MUSIC_RIGHT);
+	else
+		juSoundPlay(game->assets.sndMusicSomber, false, VOLUME_MUSIC_LEFT, VOLUME_MUSIC_RIGHT);
 }
 
 WorldSelection pnlUpdateHome(PNLRuntime game) {
@@ -1242,6 +1325,10 @@ void pnlInitPlanet(PNLRuntime game) {
 	game->planet.enemySpawnDelayPrevious = ENEMY_SPAWN_DELAY;
 	game->planet.enemySpawnDelay = ENEMY_SPAWN_DELAY;
 	memset(game->planet.enemies, 0, sizeof(struct PNLEnemy) * MAX_ENEMIES);
+
+	// Music
+	juSoundStopAll();
+	// TODO: Music for fighting
 }
 
 WorldSelection pnlUpdatePlanet(PNLRuntime game) {
@@ -1357,7 +1444,13 @@ void pnlInit(PNLRuntime game) {
 	game->assets.texCompass = juLoaderGetTexture(game->loader, "assets/compass.png");
 	game->assets.texDeathScreen = juLoaderGetTexture(game->loader, "assets/death.png");
 	game->assets.texHighscoreScreen = juLoaderGetTexture(game->loader, "assets/deathhighscore.png");
+	game->assets.texTutorial1 = juLoaderGetTexture(game->loader, "assets/tutorial1.png");
+	game->assets.texTutorial2 = juLoaderGetTexture(game->loader, "assets/tutorial2.png");
 	game->assets.sprEnemy = juLoaderGetSprite(game->loader, "assets/enemy.png");
+	game->assets.sprButtonPurchase = juLoaderGetSprite(game->loader, "assets/purchase.png");
+	game->assets.sndMusicGoofy = juLoaderGetSound(game->loader, "assets/goofytrack.wav");
+	game->assets.sndMusicSomber = juLoaderGetSound(game->loader, "assets/sombertrack.wav");
+	game->assets.sndNewGun = juLoaderGetSound(game->loader, "assets/newgun.wav");
 
 	// Build home grid
 	for (int i = 0; i < HOME_WORLD_GRID_HEIGHT; i++) {
@@ -1404,6 +1497,8 @@ void pnlPreFrame(PNLRuntime game) {
 	cam.y += (destY - cam.y) * PHYS_CAMERA_FRICTION * juDelta();
 	cam.w = GAME_WIDTH;
 	cam.h = GAME_HEIGHT;
+	cam.x = round(cam.x);
+	cam.y = round(cam.y);
 	if (!game->fadeIn && !game->fadeOut) {
 		cam.zoom = 1;
 		cam.rot = 0;
@@ -1533,6 +1628,7 @@ int main() {
 	// Free assets
 	vk2dRendererWait();
 	pnlQuit(game);
+	juSoundStopAll();
 	juLoaderFree(game->loader);
 	// juSaveFree(game->save); // uh oh memory leak?
 	free(game);
