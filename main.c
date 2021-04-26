@@ -47,6 +47,8 @@ typedef enum {
 const int GAME_WIDTH = 600;
 const int GAME_HEIGHT = 400;
 const int WINDOW_SCALE = 2;
+const real TARGET_FRAMERATE = 60;
+const char *VERSION_STRING = "v1.1";
 const char *GAME_TITLE = "Peace & Liberty";
 const char *SAVE_FILE = "save.bin";
 const char *SAVE_HIGHSCORE = "hs";
@@ -83,7 +85,7 @@ const real ENEMY_MIN_FAME = 1;
 const real ENEMY_MAX_DOSH = 5;
 const real ENEMY_MIN_DOSH = 2;
 const real ENEMY_SPEED_MULTIPLIER = 1.3;
-const real ENEMY_SPEED = 90;
+const real ENEMY_SPEED = 110;
 const real ENEMY_DAMAGE = 10; // base enemy damage and how much it can vary
 const real ENEMY_DAMAGE_VARIANCE = 0.2;
 const real ENEMY_DAMAGE_MULTIPLIER = 1.3; // Multipliers based on the difficulty level
@@ -131,7 +133,7 @@ const int MIN_MINERAL_SPAWN_DISTANCE = 300;
 const real MINERAL_PICKUP_RANGE = 20; // range at which minerals are "picked up"
 const real MINERAL_MOVE_RANGE = 100; // range at which minerals move towards the player
 const real MINERAL_MOVE_SPEED = 150; // how fast they move towards the player
-const int MAX_MINERAL_PICKUP = 5; // max/min minerals you can pickup at once
+const int MAX_MINERAL_PICKUP = 3; // max/min minerals you can pickup at once
 const int MIN_MINERAL_PICKUP = 1;
 const real MINERAL_DEPOSIT_RANGE = 100;
 #define MAX_BULLETS ((int)50) // Maximum number of bullets present at once (because I'm allergic to the hepa)
@@ -238,6 +240,7 @@ JULoadedAsset ASSETS[] = {
 		{"assets/enemy.png", 0, 0, 16, 24, 0.25, 4, 8, 12},
 		{"assets/retire.png", 0, 0, 80, 30, 0, 3},
 		{"assets/fametodosh.png", 0, 0, 80, 30, 0, 3},
+		{"assets/doshtofame.png", 0, 0, 80, 30, 0, 3},
 		{"assets/home.png"},
 		{"assets/overlay.jufnt"},
 		{"assets/helpterm.png"},
@@ -284,6 +287,8 @@ JULoadedAsset ASSETS[] = {
 		{"assets/assaultrifle.wav"},
 		{"assets/sniper.wav"},
 		{"assets/hit.wav"},
+		{"assets/mess.wav"},
+		{"assets/heavy.wav"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 #define PLANET_TEXTURE_COUNT ((int)5)
@@ -418,6 +423,7 @@ typedef struct PNLAssets {
 	JUSprite sprButtonPurchase;
 	JUSprite sprButtonRetire;
 	JUSprite sprButtonFameToDosh;
+	JUSprite sprButtonDoshToFame;
 	VK2DTexture texAssaultRifle;
 	VK2DTexture bgOnsite;
 	VK2DTexture texPistol;
@@ -443,6 +449,8 @@ typedef struct PNLAssets {
 	JUSound sndHit;
 	JUSound sndShop[MAX_SHOP_LINES]; // 3 shop sound effect
 	JUSound sndSword;
+	JUSound sndMusicMess;
+	JUSound sndHeavyDrum;
 } PNLAssets;
 
 typedef struct PNLRuntime {
@@ -547,6 +555,7 @@ bool pnlDrawButton(PNLRuntime game, JUSprite button, real x, real y) {
 	JURectangle r = {x, y, button->Internal.w, button->Internal.h};
 	bool mouseOver = juPointInRectangle(&r, game->mouseX, game->mouseY);
 	bool pressed = mouseOver && game->mouseLHeld;
+	button->rotation = 0;
 	juSpriteDrawFrame(button, mouseOver ? (pressed ? 2 : 1) : 0, x, y);
 	return mouseOver && game->mouseLReleased;
 }
@@ -611,12 +620,12 @@ TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
 		real kills = juSaveGetDouble(game->save, SAVE_KILLS);
 		const char *planet = juSaveGetString(game->save, SAVE_DEATH_PLANET);
 		const char *difficulty = juSaveGetString(game->save, SAVE_DIFFICULTY);
-		juFontDraw(game->assets.fntOverlay, x + 1, y - 2, "\n\nHigh score: %.0f fame, $%.0f dosh\nFreedom delivered to: %i aliens\nDied on planet %s\nDistance: %s", hs, dosh, kills, planet, difficulty);
+		juFontDraw(game->assets.fntOverlay, x + 10, y - 2, "\n\nHigh score: %.0f fame, $%.0f dosh\nFreedom delivered to: %i aliens\nDied on planet %s\nDistance: %s", hs, dosh, kills, planet, difficulty);
 	} else {
 		juFontDraw(game->assets.fntOverlay, x + 1, y - 2, "There is no recorded highscore.");
 	}
 	juFontDraw(game->assets.fntOverlay, x + 3, y + 300 - 75, "Retire if you're out of money or convert %.0f fame to $%.2f dosh", FAME_TO_DOSH_FAME_RATE, FAME_TO_DOSH_DOSH_RATE);
-	if (pnlDrawButton(game, game->assets.sprButtonRetire, x + 250 - 40 - 45, y + 300 - 43)) {
+	if (pnlDrawButton(game, game->assets.sprButtonRetire, x + 250 - 127, y + 300 - 43)) {
 		pnlSetNotification(game, "Restarted game");
 		JUSprite spr = game->player.sprite;
 		memcpy(&game->player, &PLAYER_DEFAULT_STATE, sizeof(struct PNLPlayer));
@@ -625,10 +634,16 @@ TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
 		for (int i = 0; i < STOCK_TRADE_COUNT; i++)
 			game->market.stockOwned[i] = 0;
 	}
-	if (pnlDrawButton(game, game->assets.sprButtonFameToDosh, x + 250 - 40 + 45, y + 300 - 43) && game->player.fame >= FAME_TO_DOSH_FAME_RATE) {
+	if (pnlDrawButton(game, game->assets.sprButtonFameToDosh, x + 250 - 127 + 85, y + 300 - 43) && game->player.fame >= FAME_TO_DOSH_FAME_RATE) {
 		game->player.fame -= FAME_TO_DOSH_FAME_RATE;
 		game->player.dosh += FAME_TO_DOSH_DOSH_RATE;
 		pnlSetNotification(game, "Politicans swayed");
+		juSoundPlay(game->assets.sndHeavyDrum, false, VOLUME_EFFECT_LEFT, VOLUME_EFFECT_RIGHT);
+	}
+	if (pnlDrawButton(game, game->assets.sprButtonDoshToFame, x + 250 - 127 + 85 + 85, y + 300 - 43) && pnlPlayerPurchase(game, FAME_TO_DOSH_DOSH_RATE)) {
+		game->player.fame += FAME_TO_DOSH_FAME_RATE;
+		pnlSetNotification(game, "Politicans swayed");
+		juSoundPlay(game->assets.sndHeavyDrum, false, VOLUME_EFFECT_LEFT, VOLUME_EFFECT_RIGHT);
 	}
 
 	return tc_NoDraw;
@@ -767,9 +782,9 @@ bool pnlRecordHighscore(PNLRuntime game) {
 	if (!juSaveKeyExists(game->save, SAVE_HIGHSCORE) || juSaveGetDouble(game->save, SAVE_HIGHSCORE) < game->player.fame) {
 		juSaveSetDouble(game->save, SAVE_HIGHSCORE, game->player.fame);
 		juSaveSetDouble(game->save, SAVE_DOSH, game->player.dosh);
-		juSaveSetDouble(game->save, SAVE_KILLS, game->player.kills);
+		juSaveSetDouble(game->save, SAVE_KILLS, (real)game->player.kills);
 		juSaveSetString(game->save, SAVE_DEATH_PLANET, PLANET_NAMES[game->planet.spec.planetNameIndex]);
-		juSaveSetString(game->save, SAVE_DIFFICULTY, DIFFICULTY_NAMES[game->planet.spec.planetDifficulty]);
+		juSaveSetString(game->save, SAVE_DIFFICULTY, DIFFICULTY_NAMES[game->planet.spec.planetDifficulty - 1]);
 		return true;
 	}
 	return false;
@@ -1146,9 +1161,9 @@ void pnlDrawTitleBar(PNLRuntime game) {
 	vk2dDrawRectangle(cam.x, cam.y, cam.w, 20);
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
 	if (game->onSite)
-		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "%s | Dosh: $%.2f | Fame: %.0f | FPS: %.1f | [on-hand/on-ship]", PLANET_NAMES[game->planet.spec.planetNameIndex], (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
+		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "%s | Dosh: $%.2f | Fame: %.0f | %s | [on-hand/on-ship]", PLANET_NAMES[game->planet.spec.planetNameIndex], (float)game->player.dosh, (float)game->player.fame, VERSION_STRING);
 	else
-		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Home | Dosh: $%.2f | Fame: %.0f | FPS: %.1f", (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
+		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Home | Dosh: $%.2f | Fame: %.0f | %s", (float)game->player.dosh, (float)game->player.fame, VERSION_STRING);
 
 	// Draw notification at top left (after compass)
 	if (game->notificationTime > 0) {
@@ -1209,6 +1224,8 @@ void pnlUpdateMinerals(PNLRuntime game) {
 				if (dist <= MINERAL_PICKUP_RANGE && game->planet.inventory.onHandInventory[game->planet.minerals[i].stockIndex] < MAX_ON_HAND_INVENTORY) {
 					game->planet.minerals[i].active = false;
 					game->planet.inventory.onHandInventory[game->planet.minerals[i].stockIndex] += MIN_MINERAL_PICKUP + round((real)(MAX_MINERAL_PICKUP - MIN_MINERAL_PICKUP) * randr());
+					game->planet.inventory.onHandInventory[game->planet.minerals[i].stockIndex] = clamp(game->planet.inventory.onHandInventory[game->planet.minerals[i].stockIndex], 0, 20);
+
 					pnlSetNotification(game, "Grabbed minerals");
 				}
 			}
@@ -1263,17 +1280,17 @@ void pnlUpdateEnemies(PNLRuntime game) {
 				if (distance > (float)GAME_WIDTH * 1.5) { // Move double speed when outside player view
 					game->planet.enemies[i].x +=
 							cos(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) *
-							juDelta();
+							juDelta() * 4;
 					game->planet.enemies[i].y -=
 							sin(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) *
-							juDelta();
+							juDelta() * 4;
 				} else {
 					game->planet.enemies[i].x +=
 							cos(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) *
-							juDelta() * 4;
+							juDelta();
 					game->planet.enemies[i].y -=
 							sin(angle) * ENEMY_SPEED * pow(ENEMY_SPEED_MULTIPLIER, game->planet.spec.planetDifficulty) *
-							juDelta() * 4;
+							juDelta();
 				}
 
 				if (distance < ENEMY_HIT_DISTANCE && game->player.hitcooldown <= 0 && !game->fadeOut) {
@@ -1383,7 +1400,7 @@ void pnlInitPlanet(PNLRuntime game) {
 
 	// Music
 	juSoundStopAll();
-	// TODO: Music for fighting
+	juSoundPlay(game->assets.sndMusicMess, true, VOLUME_MUSIC_LEFT, VOLUME_MUSIC_RIGHT);
 }
 
 WorldSelection pnlUpdatePlanet(PNLRuntime game) {
@@ -1490,6 +1507,7 @@ void pnlInit(PNLRuntime game) {
 	game->assets.sprStars = juLoaderGetSprite(game->loader, "assets/stars.png");
 	game->assets.sprButtonRetire = juLoaderGetSprite(game->loader, "assets/retire.png");
 	game->assets.sprButtonFameToDosh = juLoaderGetSprite(game->loader, "assets/fametodosh.png");
+	game->assets.sprButtonDoshToFame = juLoaderGetSprite(game->loader, "assets/doshtofame.png");
 	game->assets.texAssaultRifle = juLoaderGetTexture(game->loader, "assets/assaultrifle.png");
 	game->assets.bgOnsite = juLoaderGetTexture(game->loader, "assets/onsite.png");
 	game->assets.texPistol = juLoaderGetTexture(game->loader, "assets/pistol.png");
@@ -1517,6 +1535,8 @@ void pnlInit(PNLRuntime game) {
 	game->assets.sndAssaultRifle = juLoaderGetSound(game->loader, "assets/assaultrifle.wav");
 	game->assets.sndSniper = juLoaderGetSound(game->loader, "assets/sniper.wav");
 	game->assets.sndHit = juLoaderGetSound(game->loader, "assets/hit.wav");
+	game->assets.sndMusicMess = juLoaderGetSound(game->loader, "assets/mess.wav");
+	game->assets.sndHeavyDrum = juLoaderGetSound(game->loader, "assets/heavy.wav");
 
 	// Build home grid
 	for (int i = 0; i < HOME_WORLD_GRID_HEIGHT; i++) {
@@ -1611,8 +1631,8 @@ int main() {
 	// Init TODO: Make resizeable
 	SDL_Window *window = SDL_CreateWindow(GAME_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, GAME_WIDTH * WINDOW_SCALE, GAME_HEIGHT * WINDOW_SCALE, SDL_WINDOW_VULKAN);
 	VK2DRendererConfig config = {
-			msaa_16x,
-			sm_VSync,
+			msaa_1x,
+			sm_Immediate,
 			ft_Nearest,
 	};
 	vk2dRendererInit(window, config);
@@ -1646,6 +1666,8 @@ int main() {
 	game->ww = w;
 	game->wh = h;
 	pnlInit(game);
+
+	real time = (real)SDL_GetPerformanceCounter();
 
 	while (running) {
 		juUpdate();
@@ -1687,6 +1709,12 @@ int main() {
 			cam = vk2dRendererGetCamera();
 			vk2dDrawTextureExt(backbuffer, cam.x, cam.y, 1, 1, 0, 0, 0);
 			vk2dRendererEndFrame();
+
+			volatile int i;
+			while (((real)SDL_GetPerformanceCounter() - time) / (real)SDL_GetPerformanceFrequency() < 1.0f / TARGET_FRAMERATE) {
+				i = 0;// lol no
+			}
+			time = (real)SDL_GetPerformanceCounter();
 		}
 	}
 
@@ -1696,6 +1724,7 @@ int main() {
 	pnlQuit(game);
 	juSoundStopAll();
 	juLoaderFree(game->loader);
+	juSaveStore(game->save, SAVE_FILE);
 	// juSaveFree(game->save); // uh oh memory leak?
 	free(game);
 	vk2dTextureFree(backbuffer);
