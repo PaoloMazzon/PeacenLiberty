@@ -275,6 +275,11 @@ JULoadedAsset ASSETS[] = {
 		{"assets/dontturnmypizzainsideout.wav"},
 		{"assets/justdontgethit.wav"},
 		{"assets/sword.wav"},
+		{"assets/pistol.wav"},
+		{"assets/shotgun.wav"},
+		{"assets/assaultrifle.wav"},
+		{"assets/sniper.wav"},
+		{"assets/hit.wav"},
 };
 const int ASSET_COUNT = sizeof(ASSETS) / sizeof(JULoadedAsset);
 #define PLANET_TEXTURE_COUNT ((int)5)
@@ -425,6 +430,11 @@ typedef struct PNLAssets {
 	JUSound sndMusicSomber;
 	JUSound sndMusicGoofy;
 	JUSound sndNewGun;
+	JUSound sndPistol;
+	JUSound sndShotgun;
+	JUSound sndAssaultRifle;
+	JUSound sndSniper;
+	JUSound sndHit;
 	JUSound sndShop[MAX_SHOP_LINES]; // 3 shop sound effect
 	JUSound sndSword;
 } PNLAssets;
@@ -769,6 +779,7 @@ void _pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 									game->player.weapon.weaponDamage, game->assets.texBullet);
 				game->player.velocity.x -= cos(lookingDir) * WEAPON_SHOTGUN_RECOIL;
 				game->player.velocity.y += sin(lookingDir) * WEAPON_SHOTGUN_RECOIL;
+				juSoundPlay(game->assets.sndShotgun, false, VOLUME_EFFECT_LEFT, VOLUME_EFFECT_RIGHT);
 			}
 		} else if (game->player.weapon.weaponType == wt_Sniper) {
 			if (game->player.weapon.cooldown > 0) {
@@ -781,6 +792,7 @@ void _pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 								game->assets.texBullet);
 				game->player.velocity.x -= cos(lookingDir) * WEAPON_SNIPER_RECOIL;
 				game->player.velocity.y += sin(lookingDir) * WEAPON_SNIPER_RECOIL;
+				juSoundPlay(game->assets.sndSniper, false, VOLUME_EFFECT_LEFT, VOLUME_EFFECT_RIGHT);
 			}
 		} else if (game->player.weapon.weaponType == wt_AssaultRifle) {
 			if (game->player.weapon.cooldown > 0) {
@@ -793,6 +805,7 @@ void _pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 								game->assets.texBullet);
 				game->player.velocity.x -= cos(lookingDir) * WEAPON_ASSAULTRIFLE_RECOIL;
 				game->player.velocity.y += sin(lookingDir) * WEAPON_ASSAULTRIFLE_RECOIL;
+				juSoundPlay(game->assets.sndAssaultRifle, false, VOLUME_EFFECT_LEFT, VOLUME_EFFECT_RIGHT);
 			}
 		} else if (game->player.weapon.weaponType == wt_Pistol) {
 			if (game->mouseLPressed) {
@@ -802,6 +815,7 @@ void _pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 								game->assets.texBullet);
 				game->player.velocity.x -= cos(lookingDir) * WEAPON_PISTOL_RECOIL;
 				game->player.velocity.y += sin(lookingDir) * WEAPON_PISTOL_RECOIL;
+				juSoundPlay(game->assets.sndPistol, false, VOLUME_EFFECT_LEFT, VOLUME_EFFECT_RIGHT);
 			}
 		} else if (game->player.weapon.weaponType == wt_Sword) {
 			if (game->mouseLPressed) {
@@ -811,6 +825,7 @@ void _pnlPlayerUpdate(PNLRuntime game, bool drawPlayer) {
 								game->player.weapon.weaponDamage, game->assets.texWhoosh);
 				game->player.velocity.x -= cos(lookingDir) * WEAPON_SWORD_RECOIL;
 				game->player.velocity.y += sin(lookingDir) * WEAPON_SWORD_RECOIL;
+				juSoundPlay(game->assets.sndSword, false, VOLUME_EFFECT_LEFT, VOLUME_EFFECT_RIGHT);
 			}
 		}
 	}
@@ -1109,7 +1124,7 @@ void pnlDrawTitleBar(PNLRuntime game) {
 	vk2dDrawRectangle(cam.x, cam.y, cam.w, 20);
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
 	if (game->onSite)
-		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "%s | Dosh: $%.2f | Fame: %.0f | FPS: %.1f | Inventory [on-hand/on-ship]", PLANET_NAMES[game->planet.spec.planetNameIndex], (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
+		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "%s | Dosh: $%.2f | Fame: %.0f | FPS: %.1f | [on-hand/on-ship]", PLANET_NAMES[game->planet.spec.planetNameIndex], (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
 	else
 		juFontDraw(game->assets.fntOverlay, cam.x, cam.y - 5, "Home | Dosh: $%.2f | Fame: %.0f | FPS: %.1f", (float)game->player.dosh, (float)game->player.fame, 1000.0f / (float)vk2dRendererGetAverageFrameTime());
 
@@ -1239,9 +1254,10 @@ void pnlUpdateEnemies(PNLRuntime game) {
 							juDelta() * 2;
 				}
 
-				if (distance < ENEMY_HIT_DISTANCE && game->player.hitcooldown <= 0 && game->fadeClock <= 0) {
+				if (distance < ENEMY_HIT_DISTANCE && game->player.hitcooldown <= 0 && !game->fadeOut) {
 					real mult = pow(ENEMY_DAMAGE_MULTIPLIER, (real)game->planet.spec.planetDifficulty);
 					game->player.hp -= (ENEMY_DAMAGE * mult) + (sign(randr() - 0.5) * ENEMY_DAMAGE_VARIANCE * ENEMY_DAMAGE * randr());
+					juSoundPlay(game->assets.sndHit, false, VOLUME_EFFECT_LEFT, VOLUME_EFFECT_RIGHT);
 					game->player.hitcooldown = ENEMY_HIT_DELAY;
 
 					if (game->player.hp <= 0) {
@@ -1472,6 +1488,11 @@ void pnlInit(PNLRuntime game) {
 	game->assets.sndShop[1] = juLoaderGetSound(game->loader, "assets/justdontgethit.wav");
 	game->assets.sndShop[2] = juLoaderGetSound(game->loader, "assets/dontturnmypizzainsideout.wav");
 	game->assets.sndSword = juLoaderGetSound(game->loader, "assets/sword.wav");
+	game->assets.sndPistol = juLoaderGetSound(game->loader, "assets/pistol.wav");
+	game->assets.sndShotgun = juLoaderGetSound(game->loader, "assets/shotgun.wav");
+	game->assets.sndAssaultRifle = juLoaderGetSound(game->loader, "assets/assaultrifle.wav");
+	game->assets.sndSniper = juLoaderGetSound(game->loader, "assets/sniper.wav");
+	game->assets.sndHit = juLoaderGetSound(game->loader, "assets/hit.wav");
 
 	// Build home grid
 	for (int i = 0; i < HOME_WORLD_GRID_HEIGHT; i++) {
