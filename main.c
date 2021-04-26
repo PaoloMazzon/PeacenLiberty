@@ -75,12 +75,14 @@ const real WEAPON_MIN_DAMAGE = 20; // Minimum/maximum possible weapon damage (ro
 const real WEAPON_MAX_DAMAGE = 50;
 const real ENEMY_HP = 100; // Base enemy hp
 const real ENEMY_HP_VARIANCE = 0.3; // Enemy hp can be +/- this percent hp
-const real ENEMY_MAX_FAME = 3;
+const real ENEMY_MAX_FAME = 3; // max/min dosh/fame an enemy kill grants
 const real ENEMY_MIN_FAME = 1;
 const real ENEMY_MAX_DOSH = 5;
 const real ENEMY_MIN_DOSH = 2;
+const real ENEMY_SPEED = 30;
+const real ENEMY_HIT_DISTANCE = 10; // distance from the player that counts as a "hit"
 const real ENEMY_SPAWN_DELAY = 3; // delay in seconds between enemy spawns
-const real ENEMY_SPAWN_DELAY_DECREASE = 0.1; // how much shorter the spawn delay gets each time an enemy spawn
+const real ENEMY_SPAWN_DELAY_DECREASE = 0.05; // how much shorter the spawn delay gets each time an enemy spawn
 const real PLAYER_MAX_HP = 100;
 const real WEAPON_SWORD_DAMAGE_MULTIPLIER = 2; // Swords are risky so huge damage boost
 const real WEAPON_SHOTGUN_DAMAGE_MULTIPLIER = 0.5; // Shotguns have lots of pellets so low damage
@@ -203,7 +205,7 @@ JULoadedAsset ASSETS[] = {
 		{"assets/buy10button.png", 0, 0, 58, 29, 0, 3},
 		{"assets/sell10button.png", 0, 0, 58, 29, 0, 3},
 		{"assets/shipbutton.png", 0, 0, 75, 75, 0, 3, 0, 0},
-		{"assets/enemy.png", 0, 0, 16, 24, 0.25, 4},
+		{"assets/enemy.png", 0, 0, 16, 24, 0.25, 4, 8, 12},
 		{"assets/home.png"},
 		{"assets/overlay.jufnt"},
 		{"assets/helpterm.png"},
@@ -277,6 +279,7 @@ typedef struct PNLPlayer {
 	real dosh;
 	real fame;
 	real hp;
+	int kills;
 } PNLPlayer;
 
 const PNLPlayer PLAYER_DEFAULT_STATE = {
@@ -918,7 +921,17 @@ void pnlUpdateBullets(PNLRuntime game) {
 			if (b->lifetime >= WEAPON_BULLET_LIFETIME) {
 				b->active = false;
 			}
-			// TODO: Collisions with enemies
+
+			for (int j = 0; j < MAX_ENEMIES; j++) {
+				if (game->planet.enemies[j].active && juPointDistance(game->planet.enemies[j].x, game->planet.enemies[j].y, game->bullets[i].pos.x, game->bullets[i].pos.y) <= ENEMY_HIT_DISTANCE) {
+					game->planet.enemies[j].hp -= game->bullets[i].damage;
+					if (game->bullets[i].canPierce) {
+						game->bullets[i].damage *= 1 - WEAPON_DROPOFF;
+					} else {
+						game->bullets[i].active = false;
+					}
+				}
+			}
 		}
 	}
 }
@@ -999,7 +1012,25 @@ void pnlUpdateMinerals(PNLRuntime game) {
 }
 
 void pnlCreateEnemy(PNLRuntime game) {
+	PNLEnemy *enemy = NULL;
+	for (int i = 0; i < MAX_ENEMIES; i++)
+		if (!game->planet.enemies[i].active)
+			enemy = &game->planet.enemies[i];
 
+	if (enemy != NULL) { // Creates an enemy with random attributes (check constants at top for ranges)
+		enemy->active = true;
+		enemy->colour[0] = randr();
+		enemy->colour[1] = randr();
+		enemy->colour[2] = randr();
+		enemy->colour[3] = 1;
+		enemy->dosh = ENEMY_MIN_DOSH + ((ENEMY_MAX_DOSH - ENEMY_MIN_DOSH) * randr());
+		enemy->fame = ENEMY_MIN_FAME + ((ENEMY_MAX_FAME - ENEMY_MIN_FAME) * randr());
+		enemy->hp = ENEMY_HP + (ENEMY_HP * sign(randr() - 0.5) * ENEMY_HP_VARIANCE);
+		float angle = randr() * VK2D_PI * 2;
+		float distance = MIN_ENEMY_SPAWN_DISTANCE + ((MAX_ENEMY_SPAWN_DISTANCE - MIN_ENEMY_SPAWN_DISTANCE) * randr());
+		enemy->x = cos(angle) * distance;
+		enemy->y = -sin(angle) * distance;
+	}
 }
 
 void pnlUpdateEnemies(PNLRuntime game) {
@@ -1014,7 +1045,24 @@ void pnlUpdateEnemies(PNLRuntime game) {
 
 	// Move enemies towards player and draw
 	for (int i = 0; i < MAX_ENEMIES; i++) {
+		if (game->planet.enemies[i].active) {
+			if (game->planet.enemies[i].hp <= 0) { // Kill enemies
+				game->planet.enemies[i].active = false;
+				game->player.dosh += game->planet.enemies[i].dosh;
+				game->player.fame += game->planet.enemies[i].fame;
+				game->player.kills += 1;
+			} else {
+				float angle = juPointAngle(game->planet.enemies[i].x, game->planet.enemies[i].y, game->player.pos.x, game->player.pos.y) - (VK2D_PI / 2);
+				game->planet.enemies[i].x += cos(angle) * ENEMY_SPEED * juDelta();
+				game->planet.enemies[i].y -= sin(angle) * ENEMY_SPEED * juDelta();
 
+				// TODO: Damage player
+
+				vk2dRendererSetColourMod(game->planet.enemies[i].colour);
+				juSpriteDraw(game->assets.sprEnemy, game->planet.enemies[i].x, game->planet.enemies[i].y);
+				vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
+			}
+		}
 	}
 }
 
