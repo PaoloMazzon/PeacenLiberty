@@ -13,4 +13,5 @@ Special thanks to
 
  - *Andrew McBride for his "out of this world" (lmao) role as Rinky*
  - Dan & Esteban for a great game idea
+ - Kyle Flemming for some grade-A playtesting
  - https://www.fesliyanstudios.com/ for some great gun sounds
