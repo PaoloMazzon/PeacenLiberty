@@ -124,7 +124,7 @@ const real WEAPON_BULLET_LIFETIME = 1; // How long before bullets despawn
 const real WEAPON_BULLET_SPAWN_DISTANCE = 20;
 const real FADE_IN_DURATION = 1; // In seconds
 const real MAX_ROT = VK2D_PI * 6; // "Fading in/out" is just rotating/zooming
-const real MAX_ZOOM = 1.5;
+const real MAX_ZOOM = 1;
 const int MAX_ON_HAND_INVENTORY = 20; // Maximum you can hold of any 1 item
 const int MIN_ENEMY_SPAWN_DISTANCE = 400; // Nearest and farthest away from the player enemies can spawn
 const int MAX_ENEMY_SPAWN_DISTANCE = 600;
@@ -150,6 +150,9 @@ const float VOLUME_EFFECT_RIGHT = 0.5;
 #define MAX_SHOP_LINES ((int)3)
 const real FAME_TO_DOSH_FAME_RATE = 50;
 const real FAME_TO_DOSH_DOSH_RATE = 500;
+const real CAMERA_ZOOM_DISTANCE = 0.15; // Percent the camera is towards the mouse
+const real CAMERA_ZOOM_AIM_DISTANCE = 0.35; // Same as above but when the right mouse button is pressed
+real MINIMUM_WEAPON_DAMAGE_PERCENT = 0.75; // the shop should always contain at least this much damage between all weapons
 
 const real STOCK_BASE_PRICE = 5; // Base price of all stocks, they will fluctuate from this
 const char *STOCK_NAMES[] = { // Names of the materials you gather
@@ -558,6 +561,19 @@ bool pnlDrawButton(PNLRuntime game, JUSprite button, real x, real y) {
 	button->rotation = 0;
 	juSpriteDrawFrame(button, mouseOver ? (pressed ? 2 : 1) : 0, x, y);
 	return mouseOver && game->mouseLReleased;
+}
+
+// Same as above but can only be clicked if a condition is met
+bool pnlDrawButtonExt(PNLRuntime game, JUSprite button, real x, real y, bool condition) {
+	JURectangle r = {x, y, button->Internal.w, button->Internal.h};
+	bool mouseOver = juPointInRectangle(&r, game->mouseX, game->mouseY);
+	bool pressed = mouseOver && game->mouseLHeld;
+	button->rotation = 0;
+	if (condition)
+		juSpriteDrawFrame(button, mouseOver ? (pressed ? 2 : 1) : 0, x, y);
+	else
+		juSpriteDrawFrame(button, 0, x, y);
+	return mouseOver && game->mouseLReleased && condition;
 }
 
 void pnlDrawHealthbar(PNLRuntime game, real percent, vec4 colour, float x, float y, float w, float h) {
@@ -1327,8 +1343,15 @@ void pnlInitHome(PNLRuntime game) {
 	game->player.pos.y = PLAYER_DEFAULT_STATE.pos.y;
 	game->highscore = false;
 
-	for (int i = 0; i < MAX_WEAPONS_AT_RINKYS; i++)
-		game->shop[i] = pnlGenerateWeapon(game, wt_Any);
+	// Make sure that there is at least MINIMUM_WEAPON_DAMAGE_PERCENT damage between all weapons generated for the shop
+	real totalWeaponDamagePercent = 0;
+	while (totalWeaponDamagePercent < MINIMUM_WEAPON_DAMAGE_PERCENT) {
+		totalWeaponDamagePercent = 0;
+		for (int i = 0; i < MAX_WEAPONS_AT_RINKYS; i++) {
+			game->shop[i] = pnlGenerateWeapon(game, wt_Any);
+			totalWeaponDamagePercent += (game->shop[i].weaponDamage - WEAPON_MIN_DAMAGE) / WEAPON_MAX_DAMAGE;
+		}
+	}
 
 	// Music
 	juSoundStopAll();
@@ -1406,7 +1429,7 @@ void pnlInitPlanet(PNLRuntime game) {
 WorldSelection pnlUpdatePlanet(PNLRuntime game) {
 	// Draw background and ship
 	pnlDrawTiledBackground(game, game->assets.bgOnsite);
-	if (pnlDrawButton(game, game->assets.sprButtonShip, 0, 0) && !game->fadeOut) {
+	if (pnlDrawButtonExt(game, game->assets.sprButtonShip, 0, 0, juPointDistance(game->player.pos.x, game->player.pos.y, 75/2, 75/2) < IN_RANGE_TERMINAL_DISTANCE * 2) && !game->fadeOut) {
 		game->fadeClock = 0;
 		game->fadeOut = true;
 		pnlLoadMineralsIntoShip(game);
@@ -1537,6 +1560,7 @@ void pnlInit(PNLRuntime game) {
 	game->assets.sndHit = juLoaderGetSound(game->loader, "assets/hit.wav");
 	game->assets.sndMusicMess = juLoaderGetSound(game->loader, "assets/mess.wav");
 	game->assets.sndHeavyDrum = juLoaderGetSound(game->loader, "assets/heavy.wav");
+	game->assets.sprEnemy->rotation = 0;
 
 	// Build home grid
 	for (int i = 0; i < HOME_WORLD_GRID_HEIGHT; i++) {
@@ -1577,8 +1601,18 @@ void pnlInit(PNLRuntime game) {
 // Called before the rendering begins
 void pnlPreFrame(PNLRuntime game) {
 	VK2DCamera cam = vk2dRendererGetCamera();
+
+	// Start at the player
 	float destX = game->player.pos.x - (GAME_WIDTH / 2);
 	float destY = game->player.pos.y - (GAME_HEIGHT / 2);
+
+	// Aim towards mouse
+	float dist = juPointDistance(game->player.pos.x, game->player.pos.y, game->mouseX, game->mouseY);
+	float angle = juPointAngle(game->player.pos.x, game->player.pos.y, game->mouseX, game->mouseY) - (VK2D_PI / 2);
+	destX += cos(angle) * dist * (game->mouseRHeld ? CAMERA_ZOOM_AIM_DISTANCE : CAMERA_ZOOM_DISTANCE);
+	destY -= sin(angle) * dist * (game->mouseRHeld ? CAMERA_ZOOM_AIM_DISTANCE : CAMERA_ZOOM_DISTANCE);
+
+	// Set camera
 	cam.x += (destX - cam.x) * PHYS_CAMERA_FRICTION * juDelta();
 	cam.y += (destY - cam.y) * PHYS_CAMERA_FRICTION * juDelta();
 	cam.w = GAME_WIDTH;
@@ -1616,7 +1650,10 @@ void pnlUpdate(PNLRuntime game) {
 			pnlInitPlanet(game);
 		}
 	}
-	vk2dDrawTexture(game->assets.texCursor, game->mouseX - 4, game->mouseY - 4);
+	if (!game->mouseRHeld)
+		vk2dDrawTexture(game->assets.texCursor, game->mouseX - 4, game->mouseY - 4);
+	else
+		vk2dDrawTextureExt(game->assets.texCursor, game->mouseX - 8, game->mouseY - 8, 2, 2, 0, 0, 0);
 }
 
 void pnlQuit(PNLRuntime game) {
@@ -1629,10 +1666,10 @@ void pnlQuit(PNLRuntime game) {
 /********************** main lmao **********************/
 int main() {
 	// Init TODO: Make resizeable
-	SDL_Window *window = SDL_CreateWindow(GAME_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, GAME_WIDTH * WINDOW_SCALE, GAME_HEIGHT * WINDOW_SCALE, SDL_WINDOW_VULKAN);
+	SDL_Window *window = SDL_CreateWindow(GAME_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, GAME_WIDTH * WINDOW_SCALE, GAME_HEIGHT * WINDOW_SCALE, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 	VK2DRendererConfig config = {
 			msaa_16x,
-			sm_Immediate,
+			sm_TripleBuffer,
 			ft_Nearest,
 	};
 	vk2dRendererInit(window, config);
@@ -1711,7 +1748,17 @@ int main() {
 			vk2dRendererSetTarget(VK2D_TARGET_SCREEN);
 			vk2dRendererSetViewport(0, 0, w, h);
 			cam = vk2dRendererGetCamera();
-			vk2dDrawTextureExt(backbuffer, cam.x, cam.y, 1, 1, 0, 0, 0);
+
+			// Seriously wacky calculations since the camera is all over the place for figuring out how to draw the game upscaled
+			float xscale = (float)w / GAME_WIDTH;
+			float yscale = (float)h / GAME_HEIGHT;
+			float factor = yscale > xscale ? xscale : yscale;
+			float spaceX = (w - (GAME_WIDTH * factor)) / (w / GAME_WIDTH);
+			float spaceY = (h - (GAME_HEIGHT * factor)) / (h / GAME_HEIGHT);
+			float finalXScale = (GAME_WIDTH - spaceX) / GAME_WIDTH;
+			float finalYScale = (GAME_HEIGHT - spaceY) / GAME_HEIGHT;
+
+			vk2dDrawTextureExt(backbuffer, cam.x + (spaceX / 2), cam.y + (spaceY / 2), finalXScale, finalYScale, 0, 0, 0);
 			vk2dRendererEndFrame();
 
 			volatile int i;
