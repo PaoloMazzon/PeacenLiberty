@@ -8,6 +8,18 @@ travel to different planets and meet the locals while collecting various goods!
 
 Please check the help board in game, there are a fair few mechanics for a game this small.
 
+Roadmap (don't hold your breath)
+--------------------------------
+
+ - Enemies give feedback for getting hit
+ - Death animation for enemies
+ - Unlock framerate
+ - Scale weapons with fame
+ - More weapons
+ - More enemy types
+ - Steeper difficulty curve
+ - More flavour text
+
 Special thanks to
 -----------------
 
