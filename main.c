@@ -624,7 +624,7 @@ void pnlDrawWeaponStats(PNLRuntime game, PNLWeapon weapon, float x, float y) {
 
 PNLWeapon pnlGenerateWeapon(PNLRuntime, WeaponType);
 TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
-	VK2DCamera cam = vk2dRendererGetCamera();
+	VK2DCameraSpec cam = vk2dRendererGetCamera();
 	// Coordinates to start drawing the background - the +3 is to account for the background's frame
 	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
 	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
@@ -667,7 +667,7 @@ TerminalCode pnlUpdateMemorialTerminal(PNLRuntime game) {
 
 void pnlLoadPlanet(PNLRuntime game, int index);
 TerminalCode pnlUpdateMissionSelectTerminal(PNLRuntime game) {
-	VK2DCamera cam = vk2dRendererGetCamera();
+	VK2DCameraSpec cam = vk2dRendererGetCamera();
 	TerminalCode code = tc_NoDraw;
 
 	// Coordinates to start drawing the background - the +3 is to account for the background's frame
@@ -702,7 +702,7 @@ TerminalCode pnlUpdateMissionSelectTerminal(PNLRuntime game) {
 }
 
 TerminalCode pnlUpdateHelpTerminal(PNLRuntime game) {
-	VK2DCamera cam = vk2dRendererGetCamera();
+	VK2DCameraSpec cam = vk2dRendererGetCamera();
 	// Coordinates to start drawing the background - the +3 is to account for the background's frame
 	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
 	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
@@ -719,7 +719,7 @@ TerminalCode pnlUpdateHelpTerminal(PNLRuntime game) {
 }
 
 TerminalCode pnlUpdateStocksTerminal(PNLRuntime game) {
-	VK2DCamera cam = vk2dRendererGetCamera();
+	VK2DCameraSpec cam = vk2dRendererGetCamera();
 	// Coordinates to start drawing the background - the +3 is to account for the background's frame
 	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
 	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
@@ -771,7 +771,7 @@ TerminalCode pnlUpdateStocksTerminal(PNLRuntime game) {
 PNLWeapon pnlGenerateWeapon(PNLRuntime game, WeaponType weaponType);
 TerminalCode pnlUpdateWeaponsTerminal(PNLRuntime game) {
 	game->weaponThisFrame = true;
-	VK2DCamera cam = vk2dRendererGetCamera();
+	VK2DCameraSpec cam = vk2dRendererGetCamera();
 	// Coordinates to start drawing the background - the +3 is to account for the background's frame
 	float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
 	float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
@@ -948,7 +948,7 @@ void pnlSetNotification(PNLRuntime game, const char *string) {
 
 void pnlDrawTiledBackground(PNLRuntime game, VK2DTexture bg) {
 	// Draw background
-	VK2DCamera cam = vk2dRendererGetCamera();
+	VK2DCameraSpec cam = vk2dRendererGetCamera();
 	int tx = (cam.w / bg->img->width) + 3;
 	int ty = (cam.h / bg->img->height) + 3;
 	float ssx = roundTo(cam.x, bg->img->width) - bg->img->width;
@@ -1172,7 +1172,7 @@ void pnlUpdateBullets(PNLRuntime game) {
 }
 
 void pnlDrawTitleBar(PNLRuntime game) {
-	VK2DCamera cam = vk2dRendererGetCamera();
+	VK2DCameraSpec cam = vk2dRendererGetCamera();
 	vk2dRendererSetColourMod(VK2D_BLACK);
 	vk2dDrawRectangle(cam.x, cam.y, cam.w, 20);
 	vk2dRendererSetColourMod(VK2D_DEFAULT_COLOUR_MOD);
@@ -1204,7 +1204,7 @@ void pnlLoadMineralsIntoShip(PNLRuntime game) {
 }
 
 void pnlDrawMineralOverlay(PNLRuntime game) {
-	VK2DCamera cam = vk2dRendererGetCamera();
+	VK2DCameraSpec cam = vk2dRendererGetCamera();
 	float x = cam.x;
 	float y = cam.y + cam.h - 29;
 	vk2dRendererSetColourMod(VK2D_BLACK);
@@ -1450,7 +1450,7 @@ WorldSelection pnlUpdatePlanet(PNLRuntime game) {
 
 	// Draw death overlay
 	if (game->deathCooldown) {
-		VK2DCamera cam = vk2dRendererGetCamera();
+		VK2DCameraSpec cam = vk2dRendererGetCamera();
 		// Coordinates to start drawing the background - the +3 is to account for the background's frame
 		float x = cam.x + (GAME_WIDTH / 2) - (game->assets.bgTerminal->img->width / 2) + 3;
 		float y = cam.y + (GAME_HEIGHT / 2) - (game->assets.bgTerminal->img->height / 2) + 3;
@@ -1600,7 +1600,7 @@ void pnlInit(PNLRuntime game) {
 
 // Called before the rendering begins
 void pnlPreFrame(PNLRuntime game) {
-	VK2DCamera cam = vk2dRendererGetCamera();
+	VK2DCameraSpec cam = vk2dRendererGetCamera();
 
 	// Start at the player
 	float destX = game->player.pos.x - (GAME_WIDTH / 2);
@@ -1736,7 +1736,7 @@ int main() {
 
 			// Update game
 			pnlPreFrame(game);
-			VK2DCamera cam = vk2dRendererGetCamera();
+			VK2DCameraSpec cam = vk2dRendererGetCamera();
 			game->mouseX = (mx / (w / GAME_WIDTH)) + cam.x;
 			game->mouseY = (my / (h / GAME_HEIGHT)) + cam.y;
 			vk2dRendererStartFrame(VK2D_BLACK);
